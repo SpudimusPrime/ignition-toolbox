@@ -23,6 +23,7 @@ backend/dist/
 .vscode/
 *.swp
 *.swo
+yaml
 
 # OS
 .DS_Store

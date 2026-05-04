@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs wc *)",
+      "Bash(awk '{print $NF}')",
+      "Bash(sed 's/,//')",
+      "Bash(npm run *)",
+      "Bash(.venv\\\\Scripts\\\\playwright.exe install *)",
+      "Bash(cp \"D:\\\\mdawson\\\\Development\\\\SpudimusPrime\\\\ignition-toolbox\\\\yaml\\\\add_material.yaml\" \"C:\\\\Users\\\\mdawson\\\\.ignition-toolkit\\\\playbooks\\\\add_material.yaml\")",
+      "Bash(cp \"D:\\\\mdawson\\\\Development\\\\SpudimusPrime\\\\ignition-toolbox\\\\yaml\\\\elev8_login.yaml\" \"C:\\\\Users\\\\mdawson\\\\.ignition-toolkit\\\\playbooks\\\\elev8_login.yaml\")"
+    ]
+  }
+}

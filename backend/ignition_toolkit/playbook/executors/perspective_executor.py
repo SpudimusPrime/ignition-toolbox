@@ -212,10 +212,11 @@ class PerspectiveExecuteTestManifestHandler(StepHandler):
                 elif action == "fill":
                     selector = test.get("selector")
                     value = test.get("value", "Test")
+                    fill_mode = test.get("fill_mode", "type")
                     if not selector:
                         raise ValueError("No selector provided for fill action")
 
-                    await page.fill(selector, value, timeout=5000)
+                    await self.manager.fill(selector, value, timeout=5000, fill_mode=fill_mode)
 
                 else:
                     raise ValueError(f"Unsupported test action: {action}")

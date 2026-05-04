@@ -284,6 +284,17 @@ STEP_REGISTRY: list[StepTypeDefinition] = [
                 default=TimeoutDefaults.BROWSER_ACTION,
                 description="Maximum time to wait for element in milliseconds",
             ),
+            StepParameter(
+                name="fill_mode",
+                type="string",
+                required=False,
+                default="fill",
+                description=(
+                    "Input strategy: 'fill' (default) sets value directly; "
+                    "'type' types character-by-character to trigger React synthetic events. "
+                    "Use 'type' for Perspective inputs that revert on blur."
+                ),
+            ),
         ],
         timeout_category=TimeoutKeys.BROWSER_OPERATION,
     ),

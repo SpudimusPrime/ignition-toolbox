@@ -216,7 +216,7 @@ class BrowserManager:
         logger.info(f"Pressing key: {key}")
         await page.keyboard.press(key)
 
-    async def fill(self, selector: str, value: str, timeout: int = 30000) -> None:
+    async def fill(self, selector: str, value: str, timeout: int = 30000, fill_mode: str = "fill") -> None:
         """
         Fill input field
 
@@ -224,10 +224,32 @@ class BrowserManager:
             selector: CSS selector
             value: Value to fill
             timeout: Timeout in milliseconds
+            fill_mode: "fill" (default) uses page.fill(); "type" types character-by-character
+                       via press_sequentially, which fires React synthetic events correctly
+                       and prevents Perspective controlled inputs from reverting on blur
         """
         page = await self.get_page()
-        logger.info(f"Filling {selector} with: {value}")
-        await page.fill(selector, value, timeout=timeout)
+        logger.info(f"Filling {selector} with: {value} (mode={fill_mode})")
+        if fill_mode == "type":
+            locator = page.locator(selector)
+            await locator.wait_for(timeout=timeout)
+
+            # Perspective wraps <input> inside a container div — drill down to the
+            # actual editable element so key events land in the right place.
+            tag = await locator.evaluate("el => el.tagName.toLowerCase()")
+            if tag not in ("input", "textarea"):
+                inner = locator.locator("input, textarea")
+                if await inner.count() > 0:
+                    locator = inner.first
+
+            await locator.click()
+            await page.keyboard.press("Control+A")
+            await locator.press_sequentially(value)
+            # Tab triggers blur → Perspective commits the value to its binding system
+            # before the next fill step moves focus elsewhere.
+            await page.keyboard.press("Tab")
+        else:
+            await page.fill(selector, value, timeout=timeout)
 
     async def set_input_files(self, selector: str, file_path: str, timeout: int = 30000) -> None:
         """

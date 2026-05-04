@@ -55,8 +55,9 @@ class BrowserFillHandler(StepHandler):
         selector = params.get("selector")
         value = params.get("value")
         timeout = params.get("timeout", self.default_timeout)
-        await self.manager.fill(selector, value, timeout=timeout)
-        return {"selector": selector, "status": "filled"}
+        fill_mode = params.get("fill_mode", "fill")
+        await self.manager.fill(selector, value, timeout=timeout, fill_mode=fill_mode)
+        return {"selector": selector, "status": "filled", "fill_mode": fill_mode}
 
 
 class BrowserScreenshotHandler(StepHandler):

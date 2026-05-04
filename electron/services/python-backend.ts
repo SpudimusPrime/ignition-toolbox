@@ -303,11 +303,20 @@ export class PythonBackend {
         }
       });
 
-      // Handle stderr
+      // Handle stderr — uvicorn writes its startup messages here, not stdout
       this.process.stderr?.on('data', (data: Buffer) => {
         const output = data.toString();
         stderrBuffer += output;
         console.error('[Python Error]', output.trim());
+
+        if (output.includes('Uvicorn running') || output.includes('Application startup complete')) {
+          if (!started) {
+            started = true;
+            if (startupTimeout) clearTimeout(startupTimeout);
+            this.startHealthCheck();
+            resolve();
+          }
+        }
       });
 
       // Handle process exit
@@ -370,7 +379,7 @@ export class PythonBackend {
             }
           });
         }
-      }, 10000);
+      }, 60000);
     });
   }
 
