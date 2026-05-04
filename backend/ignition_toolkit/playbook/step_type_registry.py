@@ -670,10 +670,10 @@ STEP_REGISTRY: list[StepTypeDefinition] = [
         description="Execute another playbook as a nested step",
         parameters=[
             StepParameter(
-                name="playbook_path",
-                type="string",
+                name="playbook",
+                type="playbook_ref",
                 required=True,
-                description="Path to the playbook to execute",
+                description="Playbook to execute (must be marked Verified)",
             ),
             StepParameter(
                 name="parameters",

@@ -5,14 +5,15 @@
  * - string: TextField
  * - integer/float: TextField with number type
  * - boolean: Switch
- * - credential: Credential selector
+ * - credential: Credential selector dropdown
+ * - playbook_ref: Searchable dropdown of available playbooks
  * - file: File path input with browse
  * - selector: TextField for CSS selectors
  * - list/dict: TextArea for JSON input
  * - enum (options): Select dropdown
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Box,
   TextField,
@@ -28,14 +29,18 @@ import {
   AccordionSummary,
   AccordionDetails,
   Chip,
+  Autocomplete,
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
   Folder as FolderIcon,
   Code as CodeIcon,
+  Warning as WarningIcon,
 } from '@mui/icons-material';
-import type { StepTypeInfo, StepTypeParameter, CredentialInfo } from '../types/api';
+import { useQuery } from '@tanstack/react-query';
+import type { StepTypeInfo, StepTypeParameter, CredentialInfo, PlaybookInfo } from '../types/api';
 import { HelpTooltip } from './HelpTooltip';
+import { api } from '../api/client';
 
 interface StepConfig {
   id: string;
@@ -63,24 +68,38 @@ export function StepEditorPanel({
 }: StepEditorPanelProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // Update parameter value
+  // Local draft state for ID and Name so that each keystroke doesn't cause
+  // the parent to re-key the sortable item and unmount this component.
+  // Changes are committed to parent state on blur.
+  const [draftId, setDraftId] = useState(step.id);
+  const [draftName, setDraftName] = useState(step.name);
+  const idFocused = useRef(false);
+  const nameFocused = useRef(false);
+
+  // Sync draft when the committed step changes from outside (e.g. step switches)
+  useEffect(() => {
+    if (!idFocused.current) setDraftId(step.id);
+  }, [step.id]);
+  useEffect(() => {
+    if (!nameFocused.current) setDraftName(step.name);
+  }, [step.name]);
+
   const handleParamChange = (name: string, value: unknown) => {
-    onChange({
-      ...step,
-      parameters: {
-        ...step.parameters,
-        [name]: value,
-      },
-    });
+    onChange({ ...step, parameters: { ...step.parameters, [name]: value } });
   };
 
-  // Update step metadata
   const handleMetaChange = (field: keyof StepConfig, value: StepConfig[keyof StepConfig]) => {
-    onChange({
-      ...step,
-      [field]: value,
-    });
+    onChange({ ...step, [field]: value });
   };
+
+  // Fetch available playbooks — only when a playbook_ref parameter is present
+  const needsPlaybooks = stepType?.parameters.some((p) => p.type === 'playbook_ref') ?? false;
+  const { data: availablePlaybooks = [] } = useQuery<PlaybookInfo[]>({
+    queryKey: ['playbooks'],
+    queryFn: api.playbooks.list,
+    enabled: needsPlaybooks,
+    staleTime: 1000 * 60,
+  });
 
   if (!stepType) {
     return (
@@ -92,18 +111,22 @@ export function StepEditorPanel({
     );
   }
 
-  // Separate required and optional parameters
   const requiredParams = stepType.parameters.filter((p) => p.required);
   const optionalParams = stepType.parameters.filter((p) => !p.required);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      {/* Step ID and Name */}
+      {/* Step ID and Name — use local draft state to prevent focus loss on each keystroke */}
       <Box sx={{ display: 'flex', gap: 2 }}>
         <TextField
           label="Step ID"
-          value={step.id}
-          onChange={(e) => handleMetaChange('id', e.target.value)}
+          value={draftId}
+          onChange={(e) => setDraftId(e.target.value)}
+          onFocus={() => { idFocused.current = true; }}
+          onBlur={(e) => {
+            idFocused.current = false;
+            handleMetaChange('id', e.target.value);
+          }}
           size="small"
           required
           sx={{ flex: 1 }}
@@ -111,8 +134,13 @@ export function StepEditorPanel({
         />
         <TextField
           label="Step Name"
-          value={step.name}
-          onChange={(e) => handleMetaChange('name', e.target.value)}
+          value={draftName}
+          onChange={(e) => setDraftName(e.target.value)}
+          onFocus={() => { nameFocused.current = true; }}
+          onBlur={(e) => {
+            nameFocused.current = false;
+            handleMetaChange('name', e.target.value);
+          }}
           size="small"
           required
           sx={{ flex: 2 }}
@@ -133,6 +161,7 @@ export function StepEditorPanel({
                 parameter={param}
                 value={step.parameters[param.name]}
                 credentials={credentials}
+                availablePlaybooks={availablePlaybooks}
                 onChange={(value) => handleParamChange(param.name, value)}
               />
             ))}
@@ -160,6 +189,7 @@ export function StepEditorPanel({
                   parameter={param}
                   value={step.parameters[param.name] ?? param.default}
                   credentials={credentials}
+                  availablePlaybooks={availablePlaybooks}
                   onChange={(value) => handleParamChange(param.name, value)}
                 />
               ))}
@@ -168,7 +198,7 @@ export function StepEditorPanel({
         </Accordion>
       )}
 
-      {/* Step Options (timeout, retry, on_failure) */}
+      {/* Step Options */}
       <Accordion sx={{ bgcolor: 'background.default' }}>
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
           <Typography variant="subtitle2" sx={{ color: 'text.secondary' }}>
@@ -181,9 +211,7 @@ export function StepEditorPanel({
               label="Timeout (seconds)"
               type="number"
               value={step.timeout ?? 300}
-              onChange={(e) =>
-                handleMetaChange('timeout', parseInt(e.target.value) || 300)
-              }
+              onChange={(e) => handleMetaChange('timeout', parseInt(e.target.value) || 300)}
               size="small"
               InputProps={{ inputProps: { min: 1, max: 3600 } }}
               helperText="Maximum time to wait for step completion"
@@ -193,9 +221,7 @@ export function StepEditorPanel({
                 label="Retry Count"
                 type="number"
                 value={step.retry_count ?? 0}
-                onChange={(e) =>
-                  handleMetaChange('retry_count', parseInt(e.target.value) || 0)
-                }
+                onChange={(e) => handleMetaChange('retry_count', parseInt(e.target.value) || 0)}
                 size="small"
                 sx={{ flex: 1 }}
                 InputProps={{ inputProps: { min: 0, max: 10 } }}
@@ -205,9 +231,7 @@ export function StepEditorPanel({
                 label="Retry Delay (seconds)"
                 type="number"
                 value={step.retry_delay ?? 5}
-                onChange={(e) =>
-                  handleMetaChange('retry_delay', parseInt(e.target.value) || 5)
-                }
+                onChange={(e) => handleMetaChange('retry_delay', parseInt(e.target.value) || 5)}
                 size="small"
                 sx={{ flex: 1 }}
                 InputProps={{ inputProps: { min: 1, max: 60 } }}
@@ -232,19 +256,19 @@ export function StepEditorPanel({
   );
 }
 
-// Individual parameter input component
 function ParameterInput({
   parameter,
   value,
   credentials,
+  availablePlaybooks,
   onChange,
 }: {
   parameter: StepTypeParameter;
   value: unknown;
   credentials: CredentialInfo[];
+  availablePlaybooks: PlaybookInfo[];
   onChange: (value: unknown) => void;
 }) {
-  // Handle file browse (Electron native dialog with web fallback)
   const handleBrowseFile = async () => {
     if (window.electronAPI?.openFileDialog) {
       try {
@@ -252,24 +276,17 @@ function ParameterInput({
           title: 'Select File',
           properties: ['openFile'],
         });
-        if (result && result.length > 0) {
-          onChange(result[0]);
-        }
+        if (result && result.length > 0) onChange(result[0]);
       } catch (error) {
         console.error('Failed to open file dialog:', error);
       }
     } else {
-      // Web mode: prompt user for file path
       const path = window.prompt('Enter file path:');
-      if (path) {
-        onChange(path);
-      }
+      if (path) onChange(path);
     }
   };
 
-  // Render based on parameter type
   const renderInput = () => {
-    // If parameter has options, render as select
     if (parameter.options && parameter.options.length > 0) {
       return (
         <Select
@@ -279,9 +296,7 @@ function ParameterInput({
           fullWidth
         >
           {parameter.options.map((option) => (
-            <MenuItem key={option} value={option}>
-              {option}
-            </MenuItem>
+            <MenuItem key={option} value={option}>{option}</MenuItem>
           ))}
         </Select>
       );
@@ -335,9 +350,7 @@ function ParameterInput({
             fullWidth
             displayEmpty
           >
-            <MenuItem value="" disabled>
-              Select credential...
-            </MenuItem>
+            <MenuItem value="" disabled>Select credential...</MenuItem>
             {credentials.map((cred) => (
               <MenuItem key={cred.name} value={cred.name}>
                 {cred.name} ({cred.username})
@@ -345,6 +358,60 @@ function ParameterInput({
             ))}
           </Select>
         );
+
+      case 'playbook_ref': {
+        const verifiedPlaybooks = availablePlaybooks.filter((p) => p.verified);
+        const unverifiedPlaybooks = availablePlaybooks.filter((p) => !p.verified);
+        const sorted = [...verifiedPlaybooks, ...unverifiedPlaybooks];
+        const selected = sorted.find((p) => p.path === value) ?? null;
+
+        return (
+          <Autocomplete
+            options={sorted}
+            groupBy={(p) => (p.verified ? '✓ Verified' : '⚠ Unverified (cannot be nested)')}
+            getOptionLabel={(p) => p.path}
+            value={selected}
+            onChange={(_, newVal) => onChange(newVal?.path ?? '')}
+            isOptionEqualToValue={(a, b) => a.path === b.path}
+            filterOptions={(options, { inputValue }) => {
+              const q = inputValue.toLowerCase();
+              return options.filter(
+                (p) => p.path.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)
+              );
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                size="small"
+                placeholder="Search playbooks…"
+                helperText={
+                  selected && !selected.verified
+                    ? 'This playbook must be marked Verified before it can run as a nested step.'
+                    : undefined
+                }
+                FormHelperTextProps={{ sx: { color: 'warning.main' } }}
+              />
+            )}
+            renderOption={(props, option) => (
+              <li {...props} key={option.path}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', py: 0.25 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    {!option.verified && (
+                      <WarningIcon sx={{ fontSize: '0.85rem', color: 'warning.main' }} />
+                    )}
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>
+                      {option.path}
+                    </Typography>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                    {option.name}{option.description ? ` — ${option.description}` : ''}
+                  </Typography>
+                </Box>
+              </li>
+            )}
+          />
+        );
+      }
 
       case 'file':
         return (
@@ -394,13 +461,14 @@ function ParameterInput({
       case 'dict':
         return (
           <TextField
-            value={typeof value === 'string' ? value : JSON.stringify(value ?? (parameter.type === 'list' ? [] : {}), null, 2)}
+            value={
+              typeof value === 'string'
+                ? value
+                : JSON.stringify(value ?? (parameter.type === 'list' ? [] : {}), null, 2)
+            }
             onChange={(e) => {
-              try {
-                onChange(JSON.parse(e.target.value));
-              } catch {
-                onChange(e.target.value);
-              }
+              try { onChange(JSON.parse(e.target.value)); }
+              catch { onChange(e.target.value); }
             }}
             size="small"
             fullWidth
@@ -413,7 +481,6 @@ function ParameterInput({
 
       case 'string':
       default:
-        // Check if this looks like it needs multiline (script parameter)
         if (parameter.name === 'script' || parameter.name === 'code') {
           return (
             <TextField
@@ -447,11 +514,7 @@ function ParameterInput({
           {parameter.name}
           {parameter.required && <span style={{ color: '#ff4444' }}> *</span>}
         </FormLabel>
-        <Chip
-          label={parameter.type}
-          size="small"
-          sx={{ fontSize: '0.65rem', height: 18 }}
-        />
+        <Chip label={parameter.type} size="small" sx={{ fontSize: '0.65rem', height: 18 }} />
         {parameter.description && (
           <HelpTooltip size="small" content={parameter.description} />
         )}
