@@ -194,6 +194,9 @@ class PlaybookStep:
         timeout: Step timeout in seconds
         retry_count: Number of retries on failure
         retry_delay: Delay between retries in seconds
+        skip_if: Template expression; step is skipped when it resolves to a truthy value.
+                 Missing variables resolve to falsy so the step always runs when unset.
+                 Example: "{{ variable.session_logged_in }}"
     """
 
     id: str
@@ -204,6 +207,7 @@ class PlaybookStep:
     timeout: int = 300
     retry_count: int = 0
     retry_delay: int = 5
+    skip_if: str | None = None
 
 
 @dataclass
@@ -282,6 +286,7 @@ class StepResult:
     output: dict[str, Any] | None = None
     error: str | None = None
     retry_count: int = 0
+    nested_steps: list[dict[str, Any]] | None = None
 
 
 @dataclass

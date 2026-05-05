@@ -156,6 +156,7 @@ class WebSocketManager:
                 started_at=result.started_at,
                 completed_at=result.completed_at,
                 output=result.output,
+                nested_steps=result.nested_steps,
             )
             for result in state.step_results
         ]
@@ -183,6 +184,7 @@ class WebSocketManager:
                         "started_at": sr.started_at.isoformat() if sr.started_at else None,
                         "completed_at": sr.completed_at.isoformat() if sr.completed_at else None,
                         "output": sr.output,
+                        "nested_steps": sr.nested_steps,
                     }
                     for sr in step_results
                 ],

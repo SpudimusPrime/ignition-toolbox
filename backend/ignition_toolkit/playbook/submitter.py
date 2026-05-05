@@ -81,6 +81,180 @@ def get_token_preview() -> str | None:
     return f"{token[:4]}...{token[-4:]}"
 
 
+# ── Private repository ────────────────────────────────────────────────────────
+
+def _mask_token(token: str) -> str:
+    if len(token) <= 8:
+        return "****"
+    return f"{token[:4]}...{token[-4:]}"
+
+
+def _parse_repo_slug(repo_url: str) -> str:
+    """Normalise any GitHub URL or slug to 'owner/repo'."""
+    url = repo_url.strip().rstrip("/")
+    for prefix in ("https://github.com/", "http://github.com/", "github.com/"):
+        if url.startswith(prefix):
+            url = url[len(prefix):]
+            break
+    if url.endswith(".git"):
+        url = url[:-4]
+    return url
+
+
+def save_private_repo_settings(token: str, repo_url: str, folder: str = "") -> None:
+    path = _get_settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data: dict[str, Any] = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+        except Exception:
+            pass
+    data["private_repo_token"] = token.strip()
+    data["private_repo_url"] = repo_url.strip()
+    data["private_repo_folder"] = folder.strip().strip("/")
+    path.write_text(json.dumps(data, indent=2))
+    logger.info("Private repo settings saved")
+
+
+def get_private_repo_settings() -> dict[str, str] | None:
+    path = _get_settings_path()
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+        token = data.get("private_repo_token")
+        repo_url = data.get("private_repo_url")
+        if not token or not repo_url:
+            return None
+        return {
+            "token": token,
+            "repo_url": repo_url,
+            "folder": data.get("private_repo_folder", ""),
+        }
+    except Exception:
+        return None
+
+
+def delete_private_repo_settings() -> None:
+    path = _get_settings_path()
+    if not path.exists():
+        return
+    try:
+        data = json.loads(path.read_text())
+        data.pop("private_repo_token", None)
+        data.pop("private_repo_url", None)
+        data.pop("private_repo_folder", None)
+        path.write_text(json.dumps(data, indent=2))
+        logger.info("Private repo settings removed")
+    except Exception:
+        pass
+
+
+def get_private_repo_preview() -> dict[str, Any]:
+    settings = get_private_repo_settings()
+    if not settings:
+        return {"configured": False}
+    return {
+        "configured": True,
+        "repo_url": settings["repo_url"],
+        "folder": settings["folder"],
+        "token_preview": _mask_token(settings["token"]),
+    }
+
+
+async def submit_to_private_repo(
+    yaml_content: str,
+    playbook_path: str,
+    commit_message: str = "",
+) -> dict[str, Any]:
+    """
+    Commit a playbook YAML to the user's private GitHub repository.
+
+    Uses the Contents API (PUT /repos/{owner}/{repo}/contents/{path}) which
+    handles both create and update in one call.  The file's current SHA is
+    fetched first so updates don't conflict with existing content.
+    """
+    settings = get_private_repo_settings()
+    if not settings:
+        raise ValueError(
+            "Private repository not configured. "
+            "Add your token and repo URL in Settings → Integrations."
+        )
+
+    repo = _parse_repo_slug(settings["repo_url"])
+    token = settings["token"]
+    folder = settings["folder"]
+
+    # Build target path inside the repo
+    clean_path = playbook_path.replace("\\", "/")
+    file_path = f"{folder}/{clean_path}" if folder else clean_path
+
+    if not commit_message:
+        name = clean_path.split("/")[-1].replace(".yaml", "")
+        commit_message = f"Update playbook: {name}"
+
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+
+    import base64
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        # Validate repo access and get default branch
+        repo_resp = await client.get(f"{GITHUB_API}/repos/{repo}", headers=headers)
+        if repo_resp.status_code == 401:
+            raise ValueError("Authentication failed — check your GitHub PAT.")
+        if repo_resp.status_code == 404:
+            raise ValueError(
+                f"Repository '{repo}' not found. "
+                "Check the URL and that your token has repo access."
+            )
+        repo_resp.raise_for_status()
+        default_branch = repo_resp.json().get("default_branch", "main")
+
+        # Check if the file already exists so we can pass its SHA for updates
+        existing_sha: str | None = None
+        existing_resp = await client.get(
+            f"{GITHUB_API}/repos/{repo}/contents/{file_path}",
+            headers=headers,
+            params={"ref": default_branch},
+        )
+        if existing_resp.status_code == 200:
+            existing_sha = existing_resp.json().get("sha")
+
+        # Commit the file
+        payload: dict[str, Any] = {
+            "message": commit_message,
+            "content": base64.b64encode(yaml_content.encode()).decode(),
+            "branch": default_branch,
+        }
+        if existing_sha:
+            payload["sha"] = existing_sha
+
+        put_resp = await client.put(
+            f"{GITHUB_API}/repos/{repo}/contents/{file_path}",
+            headers=headers,
+            json=payload,
+        )
+        put_resp.raise_for_status()
+
+        result = put_resp.json()
+        commit_sha = result["commit"]["sha"]
+        commit_url = result["commit"]["html_url"]
+        action = "updated" if existing_sha else "created"
+
+        logger.info(f"Playbook {action} in private repo: {commit_url}")
+        return {
+            "commit_url": commit_url,
+            "sha": commit_sha,
+            "file_path": file_path,
+            "action": action,
+            "message": f"'{clean_path}' {action} in {repo}",
+        }
+
+
 async def submit_playbook(
     yaml_content: str,
     playbook_path: str,

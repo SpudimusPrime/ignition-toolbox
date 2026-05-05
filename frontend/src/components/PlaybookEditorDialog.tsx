@@ -74,6 +74,7 @@ interface RawYamlStep {
   retry_count?: number;
   retry_delay?: number;
   on_failure?: string;
+  skip_if?: string;
 }
 
 interface StepConfig {
@@ -85,6 +86,7 @@ interface StepConfig {
   retry_count?: number;
   retry_delay?: number;
   on_failure?: string;
+  skip_if?: string;
 }
 
 interface ParameterConfig {
@@ -174,6 +176,7 @@ export function PlaybookEditorDialog({
             retry_count: s.retry_count,
             retry_delay: s.retry_delay,
             on_failure: s.on_failure,
+            skip_if: s.skip_if,
           })),
           metadata: parsed.metadata,
         };
@@ -225,6 +228,7 @@ export function PlaybookEditorDialog({
           if (s.retry_count !== undefined && s.retry_count > 0) step.retry_count = s.retry_count;
           if (s.retry_delay !== undefined && s.retry_delay !== 5) step.retry_delay = s.retry_delay;
           if (s.on_failure !== undefined && s.on_failure !== 'abort') step.on_failure = s.on_failure;
+          if (s.skip_if) step.skip_if = s.skip_if;
           return step;
         });
       }
@@ -324,6 +328,7 @@ export function PlaybookEditorDialog({
             retry_count: s.retry_count,
             retry_delay: s.retry_delay,
             on_failure: s.on_failure,
+            skip_if: s.skip_if,
           })),
           metadata: parsed.metadata,
         };

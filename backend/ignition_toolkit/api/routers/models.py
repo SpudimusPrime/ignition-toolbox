@@ -137,6 +137,7 @@ class StepResultResponse(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     output: dict[str, Any] | None = None
+    nested_steps: list[dict[str, Any]] | None = None
 
 
 class ExecutionStatusResponse(BaseModel):

@@ -102,6 +102,16 @@ export interface HealthResponse {
 }
 
 // WebSocket message types
+export interface NestedStepResult {
+  step_id: string;
+  step_name: string;
+  status: string;
+  error: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  output?: Record<string, unknown>;
+}
+
 export interface StepResult {
   step_id: string;
   step_name: string;
@@ -113,6 +123,7 @@ export interface StepResult {
     _output?: string;
     [key: string]: unknown;
   };
+  nested_steps?: NestedStepResult[];
 }
 
 export interface ExecutionUpdate {

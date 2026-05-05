@@ -7,6 +7,7 @@
  * - boolean: Switch
  * - credential: Credential selector dropdown
  * - playbook_ref: Searchable dropdown of available playbooks
+ * - test_manifest: Structured per-item editor (perspective.execute_test_manifest)
  * - file: File path input with browse
  * - selector: TextField for CSS selectors
  * - list/dict: TextArea for JSON input
@@ -30,12 +31,16 @@ import {
   AccordionDetails,
   Chip,
   Autocomplete,
+  Button,
+  Paper,
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
   Folder as FolderIcon,
   Code as CodeIcon,
   Warning as WarningIcon,
+  Add as AddIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import type { StepTypeInfo, StepTypeParameter, CredentialInfo, PlaybookInfo } from '../types/api';
@@ -51,6 +56,7 @@ interface StepConfig {
   retry_count?: number;
   retry_delay?: number;
   on_failure?: string;
+  skip_if?: string;
 }
 
 interface StepEditorPanelProps {
@@ -249,6 +255,16 @@ export function StepEditorPanel({
                 <MenuItem value="rollback">Rollback - Attempt cleanup</MenuItem>
               </Select>
             </FormControl>
+            <TextField
+              label="Skip If"
+              value={step.skip_if ?? ''}
+              onChange={(e) => handleMetaChange('skip_if', e.target.value || undefined)}
+              size="small"
+              fullWidth
+              placeholder="{{ variable.session_logged_in }}"
+              helperText="Step is skipped when this expression is truthy. Leave blank to always run."
+              sx={{ '& .MuiInputBase-input': { fontFamily: 'monospace', fontSize: '0.85rem' } }}
+            />
           </Box>
         </AccordionDetails>
       </Accordion>
@@ -457,6 +473,14 @@ function ParameterInput({
           />
         );
 
+      case 'test_manifest':
+        return (
+          <TestManifestEditor
+            value={Array.isArray(value) ? (value as ManifestItem[]) : []}
+            onChange={onChange}
+          />
+        );
+
       case 'list':
       case 'dict':
         return (
@@ -521,5 +545,135 @@ function ParameterInput({
       </Box>
       {renderInput()}
     </FormControl>
+  );
+}
+
+// ── Test Manifest Editor ──────────────────────────────────────────────────────
+
+interface ManifestItem {
+  component_id: string;
+  selector: string;
+  action: 'click' | 'fill';
+  value?: string;
+  fill_mode?: string;
+  expected?: string;
+}
+
+function emptyItem(): ManifestItem {
+  return { component_id: '', selector: '', action: 'click', expected: '' };
+}
+
+function TestManifestEditor({
+  value,
+  onChange,
+}: {
+  value: ManifestItem[];
+  onChange: (v: ManifestItem[]) => void;
+}) {
+  const items: ManifestItem[] = value.length > 0 ? value : [];
+
+  const update = (index: number, patch: Partial<ManifestItem>) => {
+    const next = items.map((item, i) => (i === index ? { ...item, ...patch } : item));
+    onChange(next);
+  };
+
+  const add = () => onChange([...items, emptyItem()]);
+
+  const remove = (index: number) => onChange(items.filter((_, i) => i !== index));
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      {items.map((item, i) => (
+        <Paper key={i} variant="outlined" sx={{ p: 1.5, position: 'relative' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+            <Chip label={`#${i + 1}`} size="small" sx={{ fontSize: '0.65rem' }} />
+            <Typography variant="caption" color="text.secondary" sx={{ flex: 1, fontFamily: 'monospace' }}>
+              {item.component_id || '(unnamed)'}
+            </Typography>
+            <IconButton size="small" onClick={() => remove(i)} sx={{ color: 'error.main' }}>
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Box>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <TextField
+                label="component_id"
+                value={item.component_id}
+                onChange={(e) => update(i, { component_id: e.target.value })}
+                size="small"
+                sx={{ flex: 1 }}
+                placeholder="e.g. submit_btn"
+              />
+              <FormControl size="small" sx={{ minWidth: 90 }}>
+                <FormLabel sx={{ fontSize: '0.7rem' }}>action</FormLabel>
+                <Select
+                  value={item.action}
+                  onChange={(e) => update(i, { action: e.target.value as 'click' | 'fill' })}
+                  size="small"
+                >
+                  <MenuItem value="click">click</MenuItem>
+                  <MenuItem value="fill">fill</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+            <TextField
+              label="selector"
+              value={item.selector}
+              onChange={(e) => update(i, { selector: e.target.value })}
+              size="small"
+              fullWidth
+              placeholder="#componentId or text='Label'"
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <CodeIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+                  </InputAdornment>
+                ),
+              }}
+            />
+            {item.action === 'fill' && (
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <TextField
+                  label="value"
+                  value={item.value ?? ''}
+                  onChange={(e) => update(i, { value: e.target.value })}
+                  size="small"
+                  sx={{ flex: 2 }}
+                  placeholder="Text to enter"
+                />
+                <FormControl size="small" sx={{ flex: 1 }}>
+                  <FormLabel sx={{ fontSize: '0.7rem' }}>fill_mode</FormLabel>
+                  <Select
+                    value={item.fill_mode ?? 'type'}
+                    onChange={(e) => update(i, { fill_mode: e.target.value })}
+                    size="small"
+                  >
+                    <MenuItem value="type">type (Perspective)</MenuItem>
+                    <MenuItem value="fill">fill (standard)</MenuItem>
+                  </Select>
+                </FormControl>
+              </Box>
+            )}
+            <TextField
+              label="expected (optional)"
+              value={item.expected ?? ''}
+              onChange={(e) => update(i, { expected: e.target.value })}
+              size="small"
+              fullWidth
+              placeholder="Description of expected outcome"
+            />
+          </Box>
+        </Paper>
+      ))}
+      <Button
+        startIcon={<AddIcon />}
+        onClick={add}
+        size="small"
+        variant="outlined"
+        sx={{ alignSelf: 'flex-start' }}
+      >
+        Add Test Item
+      </Button>
+    </Box>
   );
 }

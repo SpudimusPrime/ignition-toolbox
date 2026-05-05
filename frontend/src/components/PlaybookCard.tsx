@@ -54,6 +54,7 @@ import {
   SystemUpdate as UpdateIcon,
   Store as StoreIcon,
   DriveFileMove as MoveIcon,
+  GitHub as GitHubIcon,
 } from '@mui/icons-material';
 import type { PlaybookInfo } from '../types/api';
 import { useStore } from '../store';
@@ -71,6 +72,7 @@ interface PlaybookCardProps {
   onViewSteps?: (playbook: PlaybookInfo) => void;
   onEditPlaybook?: (playbook: PlaybookInfo) => void;
   onSubmitToLibrary?: (playbook: PlaybookInfo) => void;
+  onPushToPrivateRepo?: (playbook: PlaybookInfo) => void;
   availableUpdate?: { latest_version: string; is_major_update: boolean; release_notes: string | null };
   sections?: Array<{ id: string; name: string }>;
   onMoveToSection?: (playbookPath: string, sectionId: string | null) => void;
@@ -92,7 +94,7 @@ function getSavedConfigPreview(playbookPath: string): SavedConfig | null {
   }
 }
 
-export function PlaybookCard({ playbook, onConfigure, onExecute, onExport, onViewSteps, onEditPlaybook, onSubmitToLibrary, availableUpdate, sections, onMoveToSection }: PlaybookCardProps) {
+export function PlaybookCard({ playbook, onConfigure, onExecute, onExport, onViewSteps, onEditPlaybook, onSubmitToLibrary, onPushToPrivateRepo, availableUpdate, sections, onMoveToSection }: PlaybookCardProps) {
   const queryClient = useQueryClient();
   const [savedConfig, setSavedConfig] = useState<SavedConfig | null>(getSavedConfigPreview(playbook.path));
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
@@ -729,7 +731,20 @@ export function PlaybookCard({ playbook, onConfigure, onExecute, onExport, onVie
             }}
           >
             <StoreIcon fontSize="small" sx={{ mr: 1 }} />
-            Submit to Library
+            Submit to Public Library
+          </MenuItem>
+        )}
+
+        {/* Push to Private Repo */}
+        {onPushToPrivateRepo && (
+          <MenuItem
+            onClick={() => {
+              setMenuAnchor(null);
+              onPushToPrivateRepo(playbook);
+            }}
+          >
+            <GitHubIcon fontSize="small" sx={{ mr: 1 }} />
+            Push to Private Repo
           </MenuItem>
         )}
 

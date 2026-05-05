@@ -130,7 +130,12 @@ class PlaybookRunHandler(StepHandler):
 
             child_resolver = ParameterResolver(
                 parameters=child_params,
-                variables={},
+                # Share the parent's variables dict by reference so any variable set
+                # inside a nested playbook (e.g. session_logged_in in elev8_login) is
+                # immediately visible to all callers up and down the chain.
+                variables=self.parent_executor.parameter_resolver.variables
+                if self.parent_executor.parameter_resolver
+                else {},
                 credential_vault=self.parent_executor.parameter_resolver.credential_vault
                 if self.parent_executor.parameter_resolver
                 else None,
@@ -154,25 +159,44 @@ class PlaybookRunHandler(StepHandler):
             # Execute all steps in the nested playbook
             nested_results = []
             nested_screenshots = []  # Track screenshots from nested execution
+            live_nested_steps: list[dict] = []  # Live view broadcast to frontend
 
-            for idx, step in enumerate(nested_playbook.steps, 1):
+            async def _broadcast_nested(steps: list[dict]) -> None:
+                if self.parent_executor.parent_engine:
+                    try:
+                        await self.parent_executor.parent_engine._update_nested_step_progress(steps)
+                    except Exception as e:
+                        logger.warning(f"Failed to broadcast nested step progress: {e}")
+
+            for step in nested_playbook.steps:
                 logger.info(f"Executing nested step: {step.name}")
 
-                # Update parent about nested step progress
-                if self.parent_executor.parent_engine:
-                    progress_info = {
-                        "nested_playbook": playbook_path,
-                        "nested_step": f"{idx}/{len(nested_playbook.steps)}",
-                        "nested_step_name": step.name,
-                        "nested_step_id": step.id,
-                    }
-                    # Find the playbook.run step in parent's execution state and update its output
-                    try:
-                        await self.parent_executor.parent_engine._update_nested_step_progress(progress_info)
-                    except Exception as e:
-                        logger.warning(f"Failed to update parent with nested step progress: {e}")
+                # Optimistically mark step as running before execution
+                from datetime import datetime as _dt
+                live_nested_steps.append({
+                    "step_id": step.id,
+                    "step_name": step.name,
+                    "status": "running",
+                    "started_at": _dt.now().isoformat(),
+                    "completed_at": None,
+                    "error": None,
+                    "output": None,
+                })
+                await _broadcast_nested(live_nested_steps)
 
                 step_result = await child_executor.execute_step(step)
+
+                # Replace running entry with actual result
+                live_nested_steps[-1] = {
+                    "step_id": step_result.step_id,
+                    "step_name": step_result.step_name,
+                    "status": step_result.status.value if hasattr(step_result.status, "value") else str(step_result.status),
+                    "started_at": step_result.started_at.isoformat() if step_result.started_at else None,
+                    "completed_at": step_result.completed_at.isoformat() if step_result.completed_at else None,
+                    "error": step_result.error,
+                    "output": step_result.output,
+                }
+                await _broadcast_nested(live_nested_steps)
 
                 # Store step output for nested playbook step references
                 if step_result.output:
@@ -180,23 +204,18 @@ class PlaybookRunHandler(StepHandler):
 
                 # Extract screenshot paths from step result output
                 if step_result.output and isinstance(step_result.output, dict):
-                    # Check for direct screenshot (browser.screenshot steps)
                     screenshot = step_result.output.get("screenshot")
                     if screenshot and isinstance(screenshot, str):
                         nested_screenshots.append(screenshot)
 
-                    # Check for nested playbook screenshots (recursive)
                     nested_playbook_screenshots = step_result.output.get("screenshots", [])
                     if isinstance(nested_playbook_screenshots, list):
                         nested_screenshots.extend(nested_playbook_screenshots)
 
-                # Store only JSON-serializable summary (not the full StepResult object)
                 nested_results.append({
                     "step_id": step.id,
                     "step_name": step.name,
-                    "status": step_result.status.value
-                    if hasattr(step_result.status, "value")
-                    else str(step_result.status),
+                    "status": step_result.status.value if hasattr(step_result.status, "value") else str(step_result.status),
                 })
 
                 # Fail fast: abort nested playbook if a step fails (respecting on_failure)

@@ -1,14 +1,18 @@
 """
 Configuration and path information API
 
-Provides runtime configuration and dynamic path information
-to enable frontend portability.
+Provides runtime configuration, dynamic path information, and persistent
+UI state storage (e.g. playbook section assignments).
 """
 
+import json
 import logging
 import os
+from pathlib import Path
+from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from ignition_toolkit.core.config import get_settings
 from ignition_toolkit.core.paths import (
@@ -62,3 +66,51 @@ async def get_config():
         # Electron apps also receive it via IPC (electron/ipc/handlers.ts)
         "websocket_api_key": settings.websocket_api_key,
     }
+
+
+# ── UI State Persistence ───────────────────────────────────────────────────────
+
+def _ui_state_path() -> Path:
+    return get_user_data_dir() / "ui_state.json"
+
+
+def _load_ui_state() -> dict[str, Any]:
+    path = _ui_state_path()
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_ui_state(state: dict[str, Any]) -> None:
+    path = _ui_state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+class SectionsPayload(BaseModel):
+    sections: list[dict[str, Any]]
+
+
+@router.get("/sections/{domain}")
+async def get_sections(domain: str):
+    """Return saved playbook sections for a domain."""
+    state = _load_ui_state()
+    return {"domain": domain, "sections": state.get("sections", {}).get(domain, [])}
+
+
+@router.put("/sections/{domain}")
+async def save_sections(domain: str, payload: SectionsPayload):
+    """Persist playbook section assignments for a domain."""
+    try:
+        state = _load_ui_state()
+        if "sections" not in state:
+            state["sections"] = {}
+        state["sections"][domain] = payload.sections
+        _save_ui_state(state)
+        return {"status": "ok", "domain": domain, "count": len(payload.sections)}
+    except Exception as e:
+        logger.exception(f"Failed to save sections for domain '{domain}': {e}")
+        raise HTTPException(status_code=500, detail=str(e))

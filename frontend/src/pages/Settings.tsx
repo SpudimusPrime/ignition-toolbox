@@ -34,6 +34,8 @@ import {
   Refresh as RefreshIcon,
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
+  Warning as WarningIcon,
+  HelpOutline as UnknownIcon,
   RestartAlt as RestartIcon,
   Palette as AppearanceIcon,
   Brightness4 as DarkModeIcon,
@@ -48,10 +50,21 @@ import { Credentials } from './Credentials';
 import { DiagnosticsSection, DataManagementSection, LogsSection } from '../components/DiagnosticsPanel';
 import { api } from '../api/client';
 import { useStore } from '../store';
-import type { HealthResponse } from '../types/api';
+import type { DetailedHealthResponse, HealthStatus } from '../types/api';
 import packageJson from '../../package.json';
 import { isElectron } from '../utils/platform';
 import type { UpdateStatus } from '../types/electron';
+
+function HealthChip({ status, size = 'small' }: { status: HealthStatus | 'unknown'; size?: 'small' | 'medium' }) {
+  const config: Record<string, { label: string; color: 'success' | 'warning' | 'error' | 'default'; icon: React.ReactElement }> = {
+    healthy:   { label: 'Healthy',   color: 'success',  icon: <CheckCircleIcon /> },
+    degraded:  { label: 'Degraded',  color: 'warning',  icon: <WarningIcon /> },
+    unhealthy: { label: 'Unhealthy', color: 'error',    icon: <ErrorIcon /> },
+    unknown:   { label: 'Unknown',   color: 'default',  icon: <UnknownIcon /> },
+  };
+  const { label, color, icon } = config[status] ?? config.unknown;
+  return <Chip label={label} color={color} size={size} icon={icon} />;
+}
 
 type SettingsTab = 'credentials' | 'diagnostics' | 'data' | 'logs' | 'integrations' | 'updates' | 'appearance' | 'about';
 
@@ -69,7 +82,7 @@ const settingsTabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] 
 export function Settings() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('credentials');
   const [appVersion, setAppVersion] = useState<string>(packageJson.version);
-  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [health, setHealth] = useState<DetailedHealthResponse | null>(null);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
     checking: false,
     available: false,
@@ -81,34 +94,48 @@ export function Settings() {
   const playbookGridColumns = useStore((state) => state.playbookGridColumns);
   const setPlaybookGridColumns = useStore((state) => state.setPlaybookGridColumns);
 
-  // GitHub token state
+  // Public library GitHub token
   const [githubToken, setGithubToken] = useState('');
   const [githubTokenPreview, setGithubTokenPreview] = useState<string | null>(null);
   const [githubTokenConfigured, setGithubTokenConfigured] = useState(false);
   const [githubTokenSaving, setGithubTokenSaving] = useState(false);
 
+  // Private repo state
+  const [privateToken, setPrivateToken] = useState('');
+  const [privateRepoUrl, setPrivateRepoUrl] = useState('');
+  const [privateFolder, setPrivateFolder] = useState('');
+  const [privateRepoConfigured, setPrivateRepoConfigured] = useState(false);
+  const [privateRepoInfo, setPrivateRepoInfo] = useState<{ repo_url: string; folder: string; token_preview: string } | null>(null);
+  const [privateRepoSaving, setPrivateRepoSaving] = useState(false);
+
   // Remote access state (for MCP/WSL integration)
   const [allowRemoteAccess, setAllowRemoteAccess] = useState(false);
+
+  const loadIntegrationStatus = () => {
+    fetch(`${api.getBaseUrl()}/api/playbooks/github-token`)
+      .then(r => r.json())
+      .then(data => { setGithubTokenConfigured(data.configured); setGithubTokenPreview(data.preview); })
+      .catch(() => {});
+    fetch(`${api.getBaseUrl()}/api/playbooks/private-repo`)
+      .then(r => r.json())
+      .then(data => {
+        setPrivateRepoConfigured(data.configured);
+        if (data.configured) setPrivateRepoInfo({ repo_url: data.repo_url, folder: data.folder, token_preview: data.token_preview });
+        else setPrivateRepoInfo(null);
+      })
+      .catch(() => {});
+  };
 
   // Get app version and health on mount
   useEffect(() => {
     if (isElectron() && window.electronAPI) {
       window.electronAPI.getVersion().then(setAppVersion).catch(() => {});
-      // Load remote access setting
       window.electronAPI.getSetting('allowRemoteAccess').then((v: unknown) => {
         setAllowRemoteAccess(v === true);
       }).catch(() => {});
     }
-    api.health().then(setHealth).catch(() => {});
-
-    // Fetch GitHub token status
-    fetch(`${api.getBaseUrl()}/api/playbooks/github-token`)
-      .then(r => r.json())
-      .then(data => {
-        setGithubTokenConfigured(data.configured);
-        setGithubTokenPreview(data.preview);
-      })
-      .catch(() => {});
+    api.diagnostics.getDetailedHealth().then(setHealth).catch(() => {});
+    loadIntegrationStatus();
   }, []);
 
   // Listen for update events from Electron
@@ -243,6 +270,36 @@ export function Settings() {
     }
   };
 
+  const handleSavePrivateRepo = async () => {
+    if (!privateToken.trim() || !privateRepoUrl.trim()) return;
+    setPrivateRepoSaving(true);
+    try {
+      await fetch(`${api.getBaseUrl()}/api/playbooks/private-repo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: privateToken.trim(), repo_url: privateRepoUrl.trim(), folder: privateFolder.trim() }),
+      });
+      setPrivateToken('');
+      setPrivateRepoUrl('');
+      setPrivateFolder('');
+      loadIntegrationStatus();
+    } catch {
+      // Error handled silently
+    } finally {
+      setPrivateRepoSaving(false);
+    }
+  };
+
+  const handleClearPrivateRepo = async () => {
+    try {
+      await fetch(`${api.getBaseUrl()}/api/playbooks/private-repo`, { method: 'DELETE' });
+      setPrivateRepoConfigured(false);
+      setPrivateRepoInfo(null);
+    } catch {
+      // Error handled silently
+    }
+  };
+
   const renderIntegrationsContent = () => (
     <Box sx={{ width: '100%', maxWidth: '100%' }}>
       <Typography variant="h6" sx={{ mb: 3 }}>
@@ -258,13 +315,22 @@ export function Settings() {
             borderColor: 'divider',
           }}
         >
-          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2, textTransform: 'uppercase', letterSpacing: 1 }}>
-            GitHub - Submit to Library
+          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5, textTransform: 'uppercase', letterSpacing: 1 }}>
+            GitHub — Submit to Public Library
           </Typography>
+          <Link
+            href="https://github.com/Gaskony-Ignition/ignition-toolbox"
+            target="_blank"
+            rel="noopener noreferrer"
+            variant="caption"
+            sx={{ mb: 2, display: 'block' }}
+          >
+            github.com/Gaskony-Ignition/ignition-toolbox
+          </Link>
           <Divider sx={{ mb: 3 }} />
 
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            A GitHub Personal Access Token (PAT) with <strong>repo</strong> scope is required to submit playbooks to the library repository.
+            A GitHub Personal Access Token (PAT) with <strong>repo</strong> scope is required to submit playbooks to the public library repository.
           </Typography>
 
           {githubTokenConfigured ? (
@@ -302,6 +368,75 @@ export function Settings() {
               >
                 {githubTokenSaving ? 'Saving...' : 'Save'}
               </Button>
+            </Box>
+          )}
+        </Paper>
+
+        {/* Private Repository */}
+        <Paper sx={{ p: 3, bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2, textTransform: 'uppercase', letterSpacing: 1 }}>
+            GitHub — Private Repository
+          </Typography>
+          <Divider sx={{ mb: 3 }} />
+
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Connect a private GitHub repository to version your playbooks. A PAT with <strong>repo</strong> scope is required.
+            Playbooks are committed directly to the repository whenever you choose to push them.
+          </Typography>
+
+          {privateRepoConfigured && privateRepoInfo ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                <Chip label={`Token: ${privateRepoInfo.token_preview}`} color="success" variant="outlined" size="small" />
+                <Chip label={privateRepoInfo.repo_url} variant="outlined" size="small" />
+                {privateRepoInfo.folder && (
+                  <Chip label={`Folder: ${privateRepoInfo.folder}`} variant="outlined" size="small" />
+                )}
+              </Box>
+              <Box>
+                <Button variant="outlined" color="error" size="small" onClick={handleClearPrivateRepo}>
+                  Remove
+                </Button>
+              </Box>
+            </Box>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <TextField
+                label="GitHub Personal Access Token"
+                value={privateToken}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPrivateToken(e.target.value)}
+                type="password"
+                size="small"
+                fullWidth
+                placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              />
+              <TextField
+                label="Repository URL"
+                value={privateRepoUrl}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPrivateRepoUrl(e.target.value)}
+                size="small"
+                fullWidth
+                placeholder="https://github.com/username/my-playbooks"
+                helperText="Supports https://github.com/... or username/repo formats"
+              />
+              <TextField
+                label="Folder (optional)"
+                value={privateFolder}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPrivateFolder(e.target.value)}
+                size="small"
+                fullWidth
+                placeholder="playbooks"
+                helperText="Sub-folder within the repo to store playbooks. Leave blank for root."
+              />
+              <Box>
+                <Button
+                  variant="contained"
+                  onClick={handleSavePrivateRepo}
+                  disabled={!privateToken.trim() || !privateRepoUrl.trim() || privateRepoSaving}
+                >
+                  {privateRepoSaving ? 'Saving...' : 'Save'}
+                </Button>
+              </Box>
             </Box>
           )}
         </Paper>
@@ -607,17 +742,45 @@ export function Settings() {
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
               <Typography variant="body2" color="text.secondary">Backend Version</Typography>
-              <Typography variant="body2">{health?.version || 'Loading...'}</Typography>
+              <Typography variant="body2">{health?.status ? (health as any).version || '—' : 'Loading...'}</Typography>
             </Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Typography variant="body2" color="text.secondary">Backend Status</Typography>
-              <Chip
-                label={health?.status === 'healthy' ? 'Healthy' : 'Unhealthy'}
-                color={health?.status === 'healthy' ? 'success' : 'error'}
-                size="small"
-                icon={health?.status === 'healthy' ? <CheckCircleIcon /> : <ErrorIcon />}
-              />
+              <HealthChip status={health?.status ?? 'unknown'} />
             </Box>
+            {/* Per-component breakdown — only shown when not fully healthy */}
+            {health?.components && (
+              <Box sx={{ pl: 2, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                {(Object.entries(health.components) as [string, { status: HealthStatus; message: string; error?: string }][]).map(
+                  ([name, comp]) => (
+                    <Box key={name} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'capitalize' }}>
+                          {name}
+                        </Typography>
+                        {(comp.status === 'unhealthy' || comp.status === 'degraded') && (comp.error || comp.message) && (
+                          <Typography variant="caption" display="block" color={comp.status === 'unhealthy' ? 'error.main' : 'warning.main'} sx={{ fontSize: '0.68rem' }}>
+                            {comp.error || comp.message}
+                          </Typography>
+                        )}
+                      </Box>
+                      <HealthChip status={comp.status} size="small" />
+                    </Box>
+                  )
+                )}
+              </Box>
+            )}
+            {/* System-level errors and warnings */}
+            {health?.errors && health.errors.length > 0 && (
+              <Alert severity="error" sx={{ py: 0.5 }}>
+                {health.errors.map((e, i) => <div key={i}>{e}</div>)}
+              </Alert>
+            )}
+            {health?.warnings && health.warnings.length > 0 && (
+              <Alert severity="warning" sx={{ py: 0.5 }}>
+                {health.warnings.map((w, i) => <div key={i}>{w}</div>)}
+              </Alert>
+            )}
             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
               <Typography variant="body2" color="text.secondary">License</Typography>
               <Typography variant="body2">MIT License</Typography>

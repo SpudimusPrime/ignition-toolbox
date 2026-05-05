@@ -180,7 +180,7 @@ class BrowserManager:
         logger.info(f"Navigating to: {url}")
         await page.goto(url, wait_until=wait_until)
 
-    async def click(self, selector: str, timeout: int = 30000, force: bool = False) -> None:
+    async def click(self, selector: str, timeout: int = 30000, force: bool = False, wait_until: str | None = None) -> None:
         """
         Click element
 
@@ -188,10 +188,13 @@ class BrowserManager:
             selector: CSS selector
             timeout: Timeout in milliseconds
             force: Force click even if element is behind another element
+            wait_until: If set, wait for this load state after clicking (e.g. "networkidle", "load")
         """
         page = await self.get_page()
-        logger.info(f"Clicking: {selector} (force={force})")
+        logger.info(f"Clicking: {selector} (force={force}, wait_until={wait_until})")
         await page.click(selector, timeout=timeout, force=force)
+        if wait_until:
+            await page.wait_for_load_state(wait_until, timeout=timeout)
 
     async def click_at_coordinates(self, x: int, y: int) -> None:
         """

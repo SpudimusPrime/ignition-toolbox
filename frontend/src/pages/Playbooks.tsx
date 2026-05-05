@@ -66,6 +66,7 @@ import { PlaybookLibraryDialog } from '../components/PlaybookLibraryDialog';
 import { PlaybookEditorDialog } from '../components/PlaybookEditorDialog';
 import { CreatePlaybookDialog } from '../components/CreatePlaybookDialog';
 import { SubmitToLibraryDialog } from '../components/SubmitToLibraryDialog';
+import { PushToPrivateRepoDialog } from '../components/PushToPrivateRepoDialog';
 import { useStore } from '../store';
 import { useCategoryOrder, useCategoryExpanded } from '../hooks/usePlaybookOrder';
 import { usePlaybookSections } from '../hooks/usePlaybookSections';
@@ -86,7 +87,7 @@ import {
 const EMPTY_PLAYBOOKS: PlaybookInfo[] = [];
 
 // Sortable playbook card wrapper
-function SortablePlaybookCard({ playbook, onConfigure, onExecute, onExport, onViewSteps, onEditPlaybook, onSubmitToLibrary, dragEnabled, availableUpdate, sections, onMoveToSection }: {
+function SortablePlaybookCard({ playbook, onConfigure, onExecute, onExport, onViewSteps, onEditPlaybook, onSubmitToLibrary, onPushToPrivateRepo, dragEnabled, availableUpdate, sections, onMoveToSection }: {
   playbook: PlaybookInfo;
   onConfigure: (playbook: PlaybookInfo) => void;
   onExecute?: (playbook: PlaybookInfo) => void;
@@ -94,6 +95,7 @@ function SortablePlaybookCard({ playbook, onConfigure, onExecute, onExport, onVi
   onViewSteps?: (playbook: PlaybookInfo) => void;
   onEditPlaybook?: (playbook: PlaybookInfo) => void;
   onSubmitToLibrary?: (playbook: PlaybookInfo) => void;
+  onPushToPrivateRepo?: (playbook: PlaybookInfo) => void;
   dragEnabled: boolean;
   availableUpdate?: { latest_version: string; is_major_update: boolean; release_notes: string | null };
   sections?: Array<{ id: string; name: string }>;
@@ -125,6 +127,7 @@ function SortablePlaybookCard({ playbook, onConfigure, onExecute, onExport, onVi
         onViewSteps={onViewSteps}
         onEditPlaybook={onEditPlaybook}
         onSubmitToLibrary={onSubmitToLibrary}
+        onPushToPrivateRepo={onPushToPrivateRepo}
         availableUpdate={availableUpdate}
         sections={sections}
         onMoveToSection={onMoveToSection}
@@ -290,6 +293,7 @@ export function Playbooks({ domainFilter }: PlaybooksProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [libraryDialogOpen, setLibraryDialogOpen] = useState(false);
   const [submitPlaybook, setSubmitPlaybook] = useState<PlaybookInfo | null>(null);
+  const [privateRepoPlaybook, setPrivateRepoPlaybook] = useState<PlaybookInfo | null>(null);
   const [sectionNameDialog, setSectionNameDialog] = useState<{
     open: boolean;
     title: string;
@@ -301,6 +305,7 @@ export function Playbooks({ domainFilter }: PlaybooksProps) {
   const sectionsDomain = domainFilter || 'gateway';
   const {
     sections,
+    loading: sectionsLoading,
     createSection,
     deleteSection,
     renameSection,
@@ -549,6 +554,10 @@ export function Playbooks({ domainFilter }: PlaybooksProps) {
     setSubmitPlaybook(playbook);
   };
 
+  const handlePushToPrivateRepo = (playbook: PlaybookInfo) => {
+    setPrivateRepoPlaybook(playbook);
+  };
+
   const handleMoveToSection = (playbookPath: string, sectionId: string | null) => {
     movePlaybook(playbookPath, sectionId);
   };
@@ -785,6 +794,7 @@ export function Playbooks({ domainFilter }: PlaybooksProps) {
                           onViewSteps={handleViewSteps}
                           onEditPlaybook={handleEditPlaybook}
                           onSubmitToLibrary={handleSubmitToLibrary}
+                          onPushToPrivateRepo={handlePushToPrivateRepo}
                           dragEnabled={dragEnabled}
                           availableUpdate={updateMap?.get(playbook.path.replace('.yaml', '').replace('.yml', ''))}
                           sections={sectionMeta}
@@ -849,6 +859,7 @@ export function Playbooks({ domainFilter }: PlaybooksProps) {
                                 onViewSteps={handleViewSteps}
                                 onEditPlaybook={handleEditPlaybook}
                                 onSubmitToLibrary={handleSubmitToLibrary}
+                                onPushToPrivateRepo={handlePushToPrivateRepo}
                                 dragEnabled={dragEnabled}
                                 availableUpdate={updateMap?.get(playbook.path.replace('.yaml', '').replace('.yml', ''))}
                                 sections={sectionMeta}
@@ -931,6 +942,7 @@ export function Playbooks({ domainFilter }: PlaybooksProps) {
                                 onViewSteps={handleViewSteps}
                                 onEditPlaybook={handleEditPlaybook}
                                 onSubmitToLibrary={handleSubmitToLibrary}
+                                onPushToPrivateRepo={handlePushToPrivateRepo}
                                 dragEnabled={dragEnabled}
                                 availableUpdate={updateMap?.get(playbook.path.replace('.yaml', '').replace('.yml', ''))}
                               />
@@ -985,6 +997,13 @@ export function Playbooks({ domainFilter }: PlaybooksProps) {
         open={submitPlaybook !== null}
         onClose={() => setSubmitPlaybook(null)}
         playbook={submitPlaybook}
+      />
+
+      {/* Push to Private Repo Dialog */}
+      <PushToPrivateRepoDialog
+        open={privateRepoPlaybook !== null}
+        onClose={() => setPrivateRepoPlaybook(null)}
+        playbook={privateRepoPlaybook}
       />
 
       {/* Playbook Editor Dialog (Form-based) */}

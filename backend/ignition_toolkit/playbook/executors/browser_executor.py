@@ -40,7 +40,8 @@ class BrowserClickHandler(StepHandler):
         selector = params.get("selector")
         timeout = params.get("timeout", self.default_timeout)
         force = params.get("force", False)
-        await self.manager.click(selector, timeout=timeout, force=force)
+        wait_until = params.get("wait_until")
+        await self.manager.click(selector, timeout=timeout, force=force, wait_until=wait_until)
         return {"selector": selector, "status": "clicked", "force": force}
 
 

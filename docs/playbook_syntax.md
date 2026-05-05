@@ -110,7 +110,43 @@ These fields apply to every step type.
   retry_count: 3      # Retry on failure up to N times
   retry_delay: 10     # Seconds between retries
   on_failure: abort   # abort (default) | continue
+  skip_if: "{{ variable.already_uploaded }}"  # skip when expression is truthy
 ```
+
+### Conditional Execution (`skip_if`)
+
+Skip a step when a runtime expression is truthy. Missing variables are treated as falsy so the step always runs when unset — the same playbook works standalone or chained.
+
+```yaml
+# Skip if variable is truthy
+skip_if: "{{ variable.session_logged_in }}"
+
+# Skip if variable equals a value (case-sensitive)
+skip_if: "{{ variable.navigation }} = materials"
+
+# Skip if variable does not equal a value
+skip_if: "{{ variable.navigation }} != administration"
+```
+
+**Pattern — track shared state with `utility.set_variable`:**
+
+```yaml
+# At the end of elev8_login.yaml:
+- id: mark_logged_in
+  type: utility.set_variable
+  parameters:
+    name: "session_logged_in"
+    value: "true"
+
+# After navigating to a view:
+- id: set_nav
+  type: utility.set_variable
+  parameters:
+    name: "navigation"
+    value: "materials"   # value is case-sensitive — keep it consistent
+```
+
+Variables set inside nested `playbook.run` calls are visible to all other playbooks in the same execution chain.
 
 ---
 
@@ -648,33 +684,54 @@ Enriches a component list from `discover_page` with reliability scores and label
 ---
 
 ### `perspective.execute_test_manifest`
-Runs a structured test manifest against Perspective components.
+Runs a list of click/fill actions against Perspective components in sequence,
+capturing screenshots and reporting pass/fail per item.
+
+> **Build this in Form mode.** The `manifest` parameter has a structured editor
+> (Add Test Item button) that renders one form per item. Do not hand-write the
+> manifest in YAML — use the Form editor or the YAML editor only after the Form
+> editor has generated the structure correctly.
+
 ```yaml
-- id: run_tests
+- id: run_form_tests
   type: perspective.execute_test_manifest
   parameters:
     manifest:
-      - component_id: "submit_btn"
-        selector: "#submitBtn"
-        action: click
-        expected: "Form submitted"
-      - component_id: "name_field"
-        selector: "#NameInput input"
+      - component_id: name_field
+        selector: "#NameInput"
         action: fill
-        value: "Test Input"
+        value: "Test Material"
         fill_mode: type
+        expected: Name field accepts input
+      - component_id: submit_btn
+        selector: "#addEditMaterial button >> text=/Submit/i"
+        action: click
+        expected: Form submits without error
     capture_screenshots: true
     on_failure: continue
-    return_to_baseline: true
-    baseline_url: "http://192.168.1.10:8088/data/perspective/client/myapp"
+    return_to_baseline: false
 ```
+
+**Each manifest item:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `component_id` | yes | Unique label used in results and screenshot names |
+| `selector` | yes | CSS selector for the target element |
+| `action` | yes | `click` or `fill` |
+| `value` | fill only | Text to enter |
+| `fill_mode` | fill only | `type` (default, required for Perspective TextFields) or `fill` |
+| `expected` | no | Human-readable description of expected outcome (logged only) |
+
+**Step parameters:**
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `manifest` | list | yes | Test definitions — each with `component_id`, `selector`, `action`, `expected` |
-| `capture_screenshots` | boolean | no | Screenshot after each test (default: true) |
+| `manifest` | list | yes | List of test items (see above) |
+| `capture_screenshots` | boolean | no | Screenshot after each item (default: true) |
 | `on_failure` | string | no | `continue` (default) \| `abort` |
-| `return_to_baseline` | boolean | no | Navigate back after each test (default: true) |
-| `baseline_url` | string | no | URL to return to |
+| `return_to_baseline` | boolean | no | Navigate back after each item (default: true) |
+| `baseline_url` | string | no | URL to return to between items |
 
 ---
 

@@ -1,9 +1,14 @@
 /**
- * Custom hook for managing user-created playbook sections with localStorage persistence
+ * Custom hook for managing user-created playbook sections.
+ *
+ * Sections are persisted to the backend (/api/config/sections/{domain}) so
+ * they survive private-browsing sessions, different browsers, and app restarts.
+ * Local state is updated immediately (optimistic) and the API call is
+ * fire-and-forget, keeping the UX synchronous.
  */
 
-import { useState, useCallback, useEffect } from 'react';
-import { STORAGE_KEYS } from '../utils/localStorage';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { api } from '../api/client';
 
 export interface PlaybookSection {
   id: string;
@@ -14,6 +19,7 @@ export interface PlaybookSection {
 
 interface PlaybookSectionsState {
   sections: PlaybookSection[];
+  loading: boolean;
   createSection: (name: string) => void;
   deleteSection: (sectionId: string) => void;
   renameSection: (sectionId: string, newName: string) => void;
@@ -24,28 +30,39 @@ interface PlaybookSectionsState {
   getUnsortedPlaybooks: (allPaths: string[]) => string[];
 }
 
-/**
- * Hook for managing user-created sections for playbook organization
- *
- * @param domain - Domain name (gateway, designer, perspective)
- * @returns Object with sections state and management functions
- */
 export function usePlaybookSections(domain: string): PlaybookSectionsState {
-  const [sections, setSections] = useState<PlaybookSection[]>(() => {
-    const stored = localStorage.getItem(STORAGE_KEYS.PLAYBOOK_SECTIONS(domain));
-    return stored ? JSON.parse(stored) : [];
-  });
+  const [sections, setSections] = useState<PlaybookSection[]>([]);
+  const [loading, setLoading] = useState(true);
+  // Keep a ref so persist() always has the latest domain without stale closure
+  const domainRef = useRef(domain);
+  domainRef.current = domain;
 
-  // Re-read from localStorage when domain changes (component is reused across sub-tabs)
+  // Load from backend on mount and when domain changes
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEYS.PLAYBOOK_SECTIONS(domain));
-    setSections(stored ? JSON.parse(stored) : []);
+    setLoading(true);
+    fetch(`${api.getBaseUrl()}/api/config/sections/${encodeURIComponent(domain)}`)
+      .then(r => r.json())
+      .then(data => setSections(data.sections ?? []))
+      .catch(() => setSections([]))
+      .finally(() => setLoading(false));
   }, [domain]);
 
+  // Optimistic update + background sync
   const persist = useCallback((newSections: PlaybookSection[]) => {
     setSections(newSections);
-    localStorage.setItem(STORAGE_KEYS.PLAYBOOK_SECTIONS(domain), JSON.stringify(newSections));
-  }, [domain]);
+    // Fire-and-forget — don't block the UI
+    fetch(
+      `${api.getBaseUrl()}/api/config/sections/${encodeURIComponent(domainRef.current)}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sections: newSections }),
+      }
+    ).catch(() => {
+      // Swallow — the worst case is the user loses the change if the backend
+      // is unreachable, which will be obvious on next reload.
+    });
+  }, []);
 
   const createSection = useCallback((name: string) => {
     const newSection: PlaybookSection = {
@@ -62,25 +79,17 @@ export function usePlaybookSections(domain: string): PlaybookSectionsState {
   }, [sections, persist]);
 
   const renameSection = useCallback((sectionId: string, newName: string) => {
-    persist(sections.map(s =>
-      s.id === sectionId ? { ...s, name: newName } : s
-    ));
+    persist(sections.map(s => s.id === sectionId ? { ...s, name: newName } : s));
   }, [sections, persist]);
 
   const toggleSection = useCallback((sectionId: string) => {
-    persist(sections.map(s =>
-      s.id === sectionId ? { ...s, expanded: !s.expanded } : s
-    ));
+    persist(sections.map(s => s.id === sectionId ? { ...s, expanded: !s.expanded } : s));
   }, [sections, persist]);
 
   const movePlaybook = useCallback((playbookPath: string, sectionId: string | null) => {
     persist(sections.map(s => {
-      // Remove from all sections first
       const filtered = s.playbooks.filter(p => p !== playbookPath);
-      // Add to target section
-      if (s.id === sectionId) {
-        return { ...s, playbooks: [...filtered, playbookPath] };
-      }
+      if (s.id === sectionId) return { ...s, playbooks: [...filtered, playbookPath] };
       return { ...s, playbooks: filtered };
     }));
   }, [sections, persist]);
@@ -90,9 +99,7 @@ export function usePlaybookSections(domain: string): PlaybookSectionsState {
   }, [persist]);
 
   const reorderPlaybooksInSection = useCallback((sectionId: string, newPlaybooks: string[]) => {
-    persist(sections.map(s =>
-      s.id === sectionId ? { ...s, playbooks: newPlaybooks } : s
-    ));
+    persist(sections.map(s => s.id === sectionId ? { ...s, playbooks: newPlaybooks } : s));
   }, [sections, persist]);
 
   const getUnsortedPlaybooks = useCallback((allPaths: string[]): string[] => {
@@ -102,6 +109,7 @@ export function usePlaybookSections(domain: string): PlaybookSectionsState {
 
   return {
     sections,
+    loading,
     createSection,
     deleteSection,
     renameSection,

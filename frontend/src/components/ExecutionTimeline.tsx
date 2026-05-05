@@ -26,7 +26,7 @@ import {
   Schedule as DurationIcon,
 } from '@mui/icons-material';
 import { getStatusTimelineColor, getStatusIcon } from '../constants/executionStatus';
-import type { StepResult } from '../types/api';
+import type { StepResult, NestedStepResult } from '../types/api';
 
 interface ExecutionTimelineProps {
   steps: StepResult[];
@@ -103,7 +103,9 @@ export function ExecutionTimeline({
       {steps.map((step, index) => {
         const isExpanded = expandedSteps.has(step.step_id);
         const isCurrent = index === currentStepIndex;
-        const hasDetails = step.error || (step.output && Object.keys(step.output).length > 0);
+        const hasNestedSteps = step.nested_steps && step.nested_steps.length > 0;
+        const isRunningWithNested = step.status === 'running' && hasNestedSteps;
+        const hasDetails = step.error || hasNestedSteps || (step.output && Object.keys(step.output).length > 0);
         const timeBetween = index > 0 ? getTimeBetweenSteps(steps[index - 1], step) : null;
 
         // Calculate duration bar width
@@ -267,11 +269,15 @@ export function ExecutionTimeline({
                   </Typography>
                 )}
 
-                {/* Expandable details */}
-                <Collapse in={isExpanded}>
+                {/* Nested steps: auto-visible while running, collapsible after */}
+                <Collapse in={isRunningWithNested || isExpanded}>
                   <Box sx={{ mt: 1 }}>
-                    {/* Error message */}
-                    {step.error && (
+                    {hasNestedSteps && (
+                      <NestedStepList steps={step.nested_steps!} formatDuration={formatDuration} />
+                    )}
+
+                    {/* Error message (shown when expanded, no nested steps) */}
+                    {!hasNestedSteps && step.error && (
                       <Paper
                         elevation={0}
                         sx={{
@@ -297,8 +303,8 @@ export function ExecutionTimeline({
                       </Paper>
                     )}
 
-                    {/* Step output */}
-                    {step.output && Object.keys(step.output).length > 0 && (
+                    {/* Step output (shown when expanded, no nested steps) */}
+                    {!hasNestedSteps && step.output && Object.keys(step.output).length > 0 && (
                       <Paper
                         elevation={0}
                         sx={{
@@ -362,6 +368,89 @@ export function ExecutionTimeline({
           </Typography>
         </Box>
       )}
+    </Box>
+  );
+}
+
+function NestedStepList({
+  steps,
+  formatDuration,
+}: {
+  steps: NestedStepResult[];
+  formatDuration: (start?: string | null, end?: string | null) => string;
+}) {
+  return (
+    <Box
+      sx={{
+        ml: 1,
+        pl: 1.5,
+        borderLeft: '2px solid',
+        borderLeftColor: 'divider',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 0.25,
+      }}
+    >
+      {steps.map((step, index) => {
+        const color = getStatusTimelineColor(step.status);
+        return (
+          <Box
+            key={step.step_id || index}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              py: 0.5,
+              px: 0.75,
+              borderRadius: 1,
+              '&:hover': { bgcolor: 'action.hover' },
+            }}
+          >
+            <Box
+              sx={{
+                width: 20,
+                height: 20,
+                borderRadius: '50%',
+                border: `2px solid ${color}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                bgcolor: 'background.paper',
+              }}
+            >
+              {getStatusIcon(step.status, { size: 'small' })}
+            </Box>
+            <Typography
+              variant="caption"
+              sx={{
+                flex: 1,
+                fontSize: '0.75rem',
+                color: step.status === 'running' ? 'text.primary' : 'text.secondary',
+                fontWeight: step.status === 'running' ? 500 : 400,
+              }}
+              noWrap
+            >
+              {step.step_name || step.step_id}
+            </Typography>
+            {step.started_at && (
+              <Typography
+                variant="caption"
+                sx={{ fontSize: '0.65rem', color: 'text.disabled', fontFamily: 'monospace', flexShrink: 0 }}
+              >
+                {formatDuration(step.started_at, step.completed_at)}
+              </Typography>
+            )}
+            {step.error && (
+              <Tooltip title={step.error}>
+                <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'error.main', flexShrink: 0 }}>
+                  ✕
+                </Typography>
+              </Tooltip>
+            )}
+          </Box>
+        );
+      })}
     </Box>
   );
 }

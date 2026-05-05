@@ -742,32 +742,24 @@ class PlaybookEngine:
 
         return result
 
-    async def _update_nested_step_progress(self, progress_info: dict[str, Any]) -> None:
+    async def _update_nested_step_progress(self, nested_steps: list[dict[str, Any]]) -> None:
         """
-        Update parent execution state with nested step progress
+        Update the running playbook.run step's nested_steps list and broadcast.
 
-        Called by PlaybookRunHandler during nested playbook execution to
-        update the parent's playbook.run step with current nested step info.
+        Called by PlaybookRunHandler before and after each child step so the
+        frontend can watch child steps in real-time.
 
         Args:
-            progress_info: Dictionary with nested_playbook, nested_step, nested_step_name
+            nested_steps: Full list of nested step result dicts accumulated so far
         """
         if not self._current_execution:
             return
 
-        execution_state = self._current_execution
-
-        # Find the currently running playbook.run step
-        for step_result in execution_state.step_results:
+        for step_result in self._current_execution.step_results:
             if step_result.status == StepStatus.RUNNING:
-                # Update the step's output to include nested progress
-                if step_result.output is None:
-                    step_result.output = {}
-                step_result.output.update(progress_info)
-
-                # Notify WebSocket of the update
-                await self._notify_update(execution_state)
-                logger.debug(f"Updated nested step progress: {progress_info}")
+                step_result.nested_steps = nested_steps
+                await self._notify_update(self._current_execution)
+                logger.debug(f"Updated nested steps: {len(nested_steps)} steps")
                 break
 
     async def _notify_update(self, execution_state: ExecutionState) -> None:

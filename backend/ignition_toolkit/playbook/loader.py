@@ -296,6 +296,7 @@ class PlaybookLoader:
             timeout=data.get("timeout", 300),
             retry_count=data.get("retry_count", 0),
             retry_delay=data.get("retry_delay", 5),
+            skip_if=data.get("skip_if") or None,
         )
 
     @staticmethod
@@ -325,14 +326,17 @@ class PlaybookLoader:
             ],
             "steps": [
                 {
-                    "id": s.id,
-                    "name": s.name,
-                    "type": s.type.value,
-                    "parameters": s.parameters,
-                    "on_failure": s.on_failure.value,
-                    "timeout": s.timeout,
-                    "retry_count": s.retry_count,
-                    "retry_delay": s.retry_delay,
+                    k: v for k, v in {
+                        "id": s.id,
+                        "name": s.name,
+                        "type": s.type.value,
+                        "parameters": s.parameters,
+                        "on_failure": s.on_failure.value,
+                        "timeout": s.timeout,
+                        "retry_count": s.retry_count,
+                        "retry_delay": s.retry_delay,
+                        "skip_if": s.skip_if,
+                    }.items() if v is not None
                 }
                 for s in playbook.steps
             ],

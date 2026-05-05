@@ -217,6 +217,19 @@ class StepExecutor:
         Returns:
             Step execution result
         """
+        # Evaluate skip_if before doing anything else
+        if step.skip_if and self.parameter_resolver:
+            if self.parameter_resolver.resolve_skip_if(step.skip_if):
+                logger.info(f"Skipping step '{step.id}' — skip_if condition was truthy: {step.skip_if}")
+                return StepResult(
+                    step_id=step.id,
+                    step_name=step.name,
+                    status=StepStatus.SKIPPED,
+                    started_at=datetime.now(),
+                    completed_at=datetime.now(),
+                    output={"skipped": True, "reason": f"skip_if: {step.skip_if}"},
+                )
+
         result = StepResult(
             step_id=step.id,
             step_name=step.name,

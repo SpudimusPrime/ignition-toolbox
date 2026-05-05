@@ -470,3 +470,77 @@ async def delete_github_token_endpoint():
     except Exception as e:
         logger.exception(f"Error deleting GitHub token: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Private repository ────────────────────────────────────────────────────────
+
+class PrivateRepoSettingsRequest(BaseModel):
+    token: str
+    repo_url: str
+    folder: str = ""
+
+
+class PrivateRepoSubmitRequest(BaseModel):
+    playbook_path: str
+    commit_message: str = ""
+
+
+@router.get("/private-repo")
+async def get_private_repo_status():
+    """Return private repo configuration status (no secrets)."""
+    try:
+        from ignition_toolkit.playbook.submitter import get_private_repo_preview
+        return get_private_repo_preview()
+    except Exception as e:
+        logger.exception(f"Error fetching private repo status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/private-repo")
+async def save_private_repo_settings_endpoint(request: PrivateRepoSettingsRequest):
+    """Save private repo PAT, URL, and optional folder."""
+    try:
+        from ignition_toolkit.playbook.submitter import save_private_repo_settings
+        save_private_repo_settings(request.token, request.repo_url, request.folder)
+        return {"status": "success", "message": "Private repo settings saved"}
+    except Exception as e:
+        logger.exception(f"Error saving private repo settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/private-repo")
+async def delete_private_repo_settings_endpoint():
+    """Remove private repo settings."""
+    try:
+        from ignition_toolkit.playbook.submitter import delete_private_repo_settings
+        delete_private_repo_settings()
+        return {"status": "success", "message": "Private repo settings removed"}
+    except Exception as e:
+        logger.exception(f"Error deleting private repo settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/private-repo/submit")
+async def submit_to_private_repo_endpoint(request: PrivateRepoSubmitRequest):
+    """Commit a playbook YAML to the user's private GitHub repository."""
+    try:
+        from ignition_toolkit.playbook.submitter import submit_to_private_repo
+        from ignition_toolkit.api.routers.playbook_crud import validate_playbook_path
+
+        playbook_path = validate_playbook_path(request.playbook_path)
+        with open(playbook_path, encoding="utf-8") as f:
+            yaml_content = f.read()
+
+        result = await submit_to_private_repo(
+            yaml_content=yaml_content,
+            playbook_path=request.playbook_path,
+            commit_message=request.commit_message,
+        )
+        return result
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Error submitting to private repo: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

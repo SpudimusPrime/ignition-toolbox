@@ -51,6 +51,7 @@ interface StepConfig {
   retry_count?: number;
   retry_delay?: number;
   on_failure?: string;
+  skip_if?: string;
 }
 
 interface DraggableStepListProps {

@@ -260,6 +260,9 @@ export class PythonBackend {
       PYTHONUNBUFFERED: '1',
       // Use app data directory for toolkit data
       IGNITION_TOOLKIT_DATA: path.join(app.getPath('userData'), 'toolkit-data'),
+      // Tell the Python backend it's running in dev mode so it skips the
+      // production frontend build check (frontend is served by Vite in dev).
+      ...(!app.isPackaged && { ENVIRONMENT: 'development' }),
       // Use bundled Playwright browsers in production
       ...(playwrightBrowsersPath && { PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath }),
     };

@@ -171,6 +171,19 @@ class PerspectiveExecuteTestManifestHandler(StepHandler):
         return_to_baseline = params.get("return_to_baseline", True)
         baseline_url = params.get("baseline_url")
 
+        # Guard: if manifest was stored as a raw string (e.g. from a bad JSON
+        # paste in the form editor) try to parse it, otherwise raise clearly.
+        if isinstance(manifest, str):
+            import json as _json
+            try:
+                manifest = _json.loads(manifest)
+            except Exception:
+                raise StepExecutionError(
+                    "perspective",
+                    "manifest parameter must be a list of test items, got a string. "
+                    "Use the Form editor's 'Add Test Item' button to build the manifest."
+                )
+
         if not manifest:
             raise StepExecutionError(
                 "perspective",

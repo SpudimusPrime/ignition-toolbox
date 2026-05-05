@@ -185,20 +185,20 @@ def get_data_dir() -> Path:
         >>> print(data)
         /git/ignition-toolbox/data
     """
-    # When running as frozen executable, use environment variable from Electron
-    # This avoids writing to protected directories like C:\Program Files
+    # Prefer the data directory set by Electron regardless of freeze state
+    env_data = os.environ.get("IGNITION_TOOLKIT_DATA")
+    if env_data:
+        data_dir = Path(env_data)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir
+
+    # When running as frozen executable without env var, fall back to home dir
     if is_frozen():
-        env_data = os.environ.get("IGNITION_TOOLKIT_DATA")
-        if env_data:
-            data_dir = Path(env_data)
-            data_dir.mkdir(parents=True, exist_ok=True)
-            return data_dir
-        # Fallback to user home directory if env var not set
         data_dir = Path.home() / ".ignition-toolkit" / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
         return data_dir
 
-    # Development mode: use project-relative directory
+    # Development mode without Electron: use project-relative directory
     data_dir = get_package_root() / "data"
     data_dir.mkdir(exist_ok=True)
     return data_dir

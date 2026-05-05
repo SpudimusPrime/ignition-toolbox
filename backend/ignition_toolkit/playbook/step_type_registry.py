@@ -735,7 +735,11 @@ STEP_REGISTRY: list[StepTypeDefinition] = [
                 name="value",
                 type="string",
                 required=True,
-                description="Value to assign to the variable",
+                description=(
+                    "Value to assign to the variable. "
+                    "Case-sensitive — 'Materials' and 'materials' are different values. "
+                    "Use consistent casing when checking with skip_if."
+                ),
             ),
         ],
         timeout_category=None,
@@ -801,9 +805,14 @@ STEP_REGISTRY: list[StepTypeDefinition] = [
         parameters=[
             StepParameter(
                 name="manifest",
-                type="list",
+                type="test_manifest",
                 required=True,
-                description="List of test definitions to execute",
+                description=(
+                    "List of test items. Each item requires: "
+                    "component_id (string), selector (CSS selector), action ('click' or 'fill'). "
+                    "Fill items also need: value (string), fill_mode ('type' recommended for Perspective). "
+                    "Optional on all items: expected (description of expected outcome)."
+                ),
             ),
             StepParameter(
                 name="capture_screenshots",

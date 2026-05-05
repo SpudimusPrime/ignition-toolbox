@@ -27,8 +27,16 @@ from ignition_toolkit.api.routers.playbook_library import (
     browse_available_playbooks,
     check_for_updates,
     check_playbook_update,
+    delete_github_token_endpoint,
+    delete_private_repo_settings_endpoint,
+    get_github_token_status,
+    get_private_repo_status,
     get_update_stats,
     install_playbook,
+    save_github_token_endpoint,
+    save_private_repo_settings_endpoint,
+    submit_playbook_to_library,
+    submit_to_private_repo_endpoint,
     uninstall_playbook,
     update_playbook_to_latest,
 )
@@ -71,11 +79,25 @@ router.add_api_route("/updates", check_for_updates, methods=["GET"], tags=["play
 router.add_api_route("/updates/stats", get_update_stats, methods=["GET"], tags=["playbooks-library"])
 router.add_api_route("/updates/{playbook_path:path}", check_playbook_update, methods=["GET"], tags=["playbooks-library"])
 # ============================================================================
-# Lifecycle Operations (static POST routes first)
+# Lifecycle Operations (static routes first)
 # ============================================================================
 
 router.add_api_route("/import", import_playbook, methods=["POST"], tags=["playbooks-lifecycle"])
 router.add_api_route("/create", create_playbook, methods=["POST"], tags=["playbooks-lifecycle"])
+router.add_api_route("/submit", submit_playbook_to_library, methods=["POST"], tags=["playbooks-library"])
+
+# ============================================================================
+# GitHub Integration (GET routes must come before the catch-all)
+# ============================================================================
+
+router.add_api_route("/github-token", get_github_token_status, methods=["GET"], tags=["playbooks-library"])
+router.add_api_route("/github-token", save_github_token_endpoint, methods=["POST"], tags=["playbooks-library"])
+router.add_api_route("/github-token", delete_github_token_endpoint, methods=["DELETE"], tags=["playbooks-library"])
+
+router.add_api_route("/private-repo", get_private_repo_status, methods=["GET"], tags=["playbooks-library"])
+router.add_api_route("/private-repo", save_private_repo_settings_endpoint, methods=["POST"], tags=["playbooks-library"])
+router.add_api_route("/private-repo", delete_private_repo_settings_endpoint, methods=["DELETE"], tags=["playbooks-library"])
+router.add_api_route("/private-repo/submit", submit_to_private_repo_endpoint, methods=["POST"], tags=["playbooks-library"])
 
 # ============================================================================
 # Metadata Operations (static POST route first)

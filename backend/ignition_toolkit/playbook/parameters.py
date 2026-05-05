@@ -320,6 +320,43 @@ class ParameterResolver:
                 f"Error accessing attribute '{attr_name}' on {ref_type} '{ref_name}': {e}"
             )
 
+    def resolve_skip_if(self, skip_if: str) -> bool:
+        """
+        Evaluate a skip_if expression.
+
+        Returns True (skip the step) when the expression resolves to a truthy value.
+        Missing variables resolve to falsy so steps always run when the variable hasn't
+        been set yet — allowing the same playbook to be run standalone or chained.
+
+        Supported forms (after template substitution):
+          Truthiness:  "{{ variable.session_logged_in }}"
+          Equality:    "{{ variable.navigation }} = materials"
+          Inequality:  "{{ variable.navigation }} != materials"
+        """
+        try:
+            resolved = self._resolve_string(skip_if)
+        except ParameterResolutionError:
+            return False  # Variable not defined → don't skip
+
+        if isinstance(resolved, bool):
+            return resolved
+
+        if not isinstance(resolved, str):
+            return bool(resolved)
+
+        s = resolved.strip()
+
+        # Inequality must be checked before equality (!=  vs =)
+        if " != " in s:
+            left, right = s.split(" != ", 1)
+            return left.strip() != right.strip()
+
+        if " = " in s:
+            left, right = s.split(" = ", 1)
+            return left.strip() == right.strip()
+
+        return s.lower() not in ("", "false", "0", "null", "none")
+
     def resolve_file_path(self, path: str, base_path: Path | None = None) -> Path:
         """
         Resolve file path (handle relative paths)
