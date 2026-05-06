@@ -37,6 +37,7 @@ export interface PlaybookInfo {
   enabled: boolean;
   last_modified: string | null;
   verified_at: string | null;
+  last_committed_at: string | null;
   // PORTABILITY v4: Origin tracking
   origin: string;  // built-in, user-created, duplicated, unknown
   duplicated_from: string | null;  // Source playbook path if duplicated

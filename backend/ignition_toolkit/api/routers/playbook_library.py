@@ -536,6 +536,12 @@ async def submit_to_private_repo_endpoint(request: PrivateRepoSubmitRequest):
             playbook_path=request.playbook_path,
             commit_message=request.commit_message,
         )
+        # Record commit timestamp in the shared singleton so the list endpoint
+        # sees it immediately without requiring a restart
+        from ignition_toolkit.api.app import metadata_store
+        meta = metadata_store.get_metadata(request.playbook_path)
+        meta.mark_committed()
+        metadata_store.update_metadata(request.playbook_path, meta)
         return result
     except HTTPException:
         raise

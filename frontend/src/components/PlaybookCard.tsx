@@ -370,6 +370,21 @@ export function PlaybookCard({ playbook, onConfigure, onExecute, onExport, onVie
           </Typography>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 1, flexShrink: 0 }}>
+            {/* GitHub commit status icon */}
+            {playbook.last_committed_at && (() => {
+              const committed = new Date(playbook.last_committed_at).getTime();
+              const modified = playbook.last_modified ? new Date(playbook.last_modified).getTime() : 0;
+              const isClean = committed >= modified;
+              return (
+                <Tooltip title={isClean
+                  ? `Committed ${new Date(playbook.last_committed_at).toLocaleString()}`
+                  : `Unsaved changes since last commit (${new Date(playbook.last_committed_at).toLocaleString()})`
+                }>
+                  <GitHubIcon sx={{ fontSize: 16, color: isClean ? 'success.main' : 'error.main' }} />
+                </Tooltip>
+              );
+            })()}
+
             {/* Verified icon (only shown for verified playbooks) */}
             {playbook.verified && (
               <Tooltip title="Verified">

@@ -18,6 +18,7 @@ import {
   Link,
 } from '@mui/material';
 import { GitHub as GitHubIcon, CheckCircle as SuccessIcon } from '@mui/icons-material';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { PlaybookInfo } from '../types/api';
 
@@ -35,6 +36,7 @@ interface RepoInfo {
 }
 
 export function PushToPrivateRepoDialog({ open, onClose, playbook }: PushToPrivateRepoDialogProps) {
+  const queryClient = useQueryClient();
   const [commitMessage, setCommitMessage] = useState('');
   const [pushing, setPushing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +87,7 @@ export function PushToPrivateRepoDialog({ open, onClose, playbook }: PushToPriva
         message: data.message,
         action: data.action,
       });
+      queryClient.invalidateQueries({ queryKey: ['playbooks'] });
     } catch (err) {
       setError((err as Error).message);
     } finally {

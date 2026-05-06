@@ -30,6 +30,7 @@ class PlaybookMetadata:
     origin: str = "unknown"  # built-in, user-created, duplicated
     duplicated_from: str | None = None  # Source playbook path if duplicated
     created_at: str | None = None  # When playbook was created/added
+    last_committed_at: str | None = None  # When last pushed to private repo
 
     def increment_revision(self):
         """Increment revision number"""
@@ -47,6 +48,10 @@ class PlaybookMetadata:
         self.verified = False
         self.verified_at = None
         self.verified_by = None
+
+    def mark_committed(self):
+        """Record that this playbook was successfully pushed to the private repo"""
+        self.last_committed_at = datetime.now().isoformat()
 
     def mark_as_built_in(self):
         """Mark playbook as built-in (shipped with toolkit)"""
