@@ -298,10 +298,8 @@ class BrowserManager:
 
         if use_format == "webp":
             screenshot_path = self.screenshots_dir / f"{name}.webp"
+            screenshot_path.parent.mkdir(parents=True, exist_ok=True)
             logger.info(f"Taking WebP screenshot: {screenshot_path}")
-            # Playwright supports type="jpeg" for lossy, but we can save as webp via Pillow
-            # Actually, let's use JPEG with good quality, then convert to WebP for best compression
-            # Simpler approach: Take PNG first, then convert to WebP using Pillow
             import io
             try:
                 from PIL import Image
@@ -309,13 +307,13 @@ class BrowserManager:
                 img = Image.open(io.BytesIO(screenshot_bytes))
                 img.save(str(screenshot_path), "WEBP", quality=SCREENSHOT_WEBP_QUALITY)
             except ImportError:
-                # Pillow not available, fall back to PNG
                 logger.warning("Pillow not installed, falling back to PNG format")
                 screenshot_path = self.screenshots_dir / f"{name}.png"
+                screenshot_path.parent.mkdir(parents=True, exist_ok=True)
                 await page.screenshot(path=str(screenshot_path), full_page=full_page)
         else:
-            # Default to PNG (lossless, universal compatibility)
             screenshot_path = self.screenshots_dir / f"{name}.png"
+            screenshot_path.parent.mkdir(parents=True, exist_ok=True)
             logger.info(f"Taking PNG screenshot: {screenshot_path}")
             await page.screenshot(path=str(screenshot_path), full_page=full_page)
 

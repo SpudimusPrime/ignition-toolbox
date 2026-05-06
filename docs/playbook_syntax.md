@@ -337,6 +337,7 @@ Clicks an element.
 | `selector` | selector | yes | CSS selector |
 | `timeout` | integer | no | Max wait in ms (default: 30000) |
 | `force` | boolean | no | Click even if behind another element |
+| `wait_until` | string | no | Wait for load state after click: `load` \| `networkidle` \| `domcontentloaded`. Use `networkidle` when a click triggers page navigation. |
 
 ---
 
@@ -390,7 +391,7 @@ Saves a screenshot to the data/screenshots directory.
 ```
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `name` | string | no | Filename (without extension) |
+| `name` | string | no | Filename without extension. Use forward slashes to save into a subfolder: `"add_material/01_initial"` saves to `screenshots/add_material/01_initial.webp`. The subfolder is created automatically. |
 | `full_page` | boolean | no | Capture full scrollable page (default: false) |
 
 ---
@@ -684,8 +685,8 @@ Enriches a component list from `discover_page` with reliability scores and label
 ---
 
 ### `perspective.execute_test_manifest`
-Runs a list of click/fill actions against Perspective components in sequence,
-capturing screenshots and reporting pass/fail per item.
+Runs a sequence of actions against Perspective components, capturing screenshots
+and reporting pass/fail per item. Supports click, fill, and keyboard actions.
 
 > **Build this in Form mode.** The `manifest` parameter has a structured editor
 > (Add Test Item button) that renders one form per item. Do not hand-write the
@@ -696,6 +697,7 @@ capturing screenshots and reporting pass/fail per item.
 - id: run_form_tests
   type: perspective.execute_test_manifest
   parameters:
+    on_failure: abort
     manifest:
       - component_id: name_field
         selector: "#NameInput"
@@ -703,10 +705,33 @@ capturing screenshots and reporting pass/fail per item.
         value: "Test Material"
         fill_mode: type
         expected: Name field accepts input
+        screenshot_name: "add_material/01_name_field"
+
+      - component_id: open_dropdown
+        selector: "[data-component-path*='MyPopup$0:2['][data-component-path*='.0:3:1'] >> nth=-1"
+        action: click
+        expected: Dropdown opens and search is focused
+
+      - component_id: type_filter
+        action: keyboard
+        text: "warehouse-a"
+        expected: Options filtered
+
+      - component_id: select_option
+        action: keyboard
+        key: ArrowDown
+        expected: First option highlighted
+
+      - component_id: confirm_option
+        action: keyboard
+        key: Enter
+        expected: Option selected
+
       - component_id: submit_btn
-        selector: "#addEditMaterial button >> text=/Submit/i"
+        selector: "#myDialog button:has-text('Submit')"
         action: click
         expected: Form submits without error
+        skip_if: "{{ variable.skip_submit }} = true"
     capture_screenshots: true
     on_failure: continue
     return_to_baseline: false
@@ -714,14 +739,22 @@ capturing screenshots and reporting pass/fail per item.
 
 **Each manifest item:**
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `component_id` | yes | Unique label used in results and screenshot names |
-| `selector` | yes | CSS selector for the target element |
-| `action` | yes | `click` or `fill` |
-| `value` | fill only | Text to enter |
-| `fill_mode` | fill only | `type` (default, required for Perspective TextFields) or `fill` |
-| `expected` | no | Human-readable description of expected outcome (logged only) |
+| Field | Actions | Required | Description |
+|-------|---------|----------|-------------|
+| `component_id` | all | yes | Unique label used in results and screenshot names |
+| `action` | — | yes | `click`, `fill`, or `keyboard` |
+| `selector` | click, fill | yes* | CSS selector for the target element (*not used by `keyboard`) |
+| `value` | fill | yes | Text to enter |
+| `fill_mode` | fill | no | `type` (default, required for Perspective TextFields) or `fill` |
+| `key` | keyboard | yes* | Key name or combo: `Enter`, `ArrowDown`, `Tab`, `Control+A`, etc. |
+| `text` | keyboard | yes* | Types a full string to the focused element. Use instead of `key` when entering multiple characters (e.g. filtering a dropdown after opening it). |
+| `expected` | all | no | Human-readable description of expected outcome (logged only) |
+| `screenshot_name` | all | no | Custom screenshot filename. Supports subfolders: `"step_name/01_label"`. Default: auto-generated from `component_id`. |
+| `skip_if` | all | no | Skip this item when the expression is truthy. Uses the same syntax as step-level `skip_if`. |
+
+> **`keyboard` action:** Sends input to whichever element currently has focus — no selector needed. Use `key` for a single keystroke and `text` for typing multiple characters. Opening a Perspective dropdown automatically focuses its search field, so you can type the filter text immediately after the open click using `action: keyboard` + `text:`.
+
+> **Perspective dropdown pattern:** Click the dropdown container to open it (focus lands on the search), use `keyboard` + `text` to filter, `keyboard` + `key: ArrowDown` to highlight the first result, then `keyboard` + `key: Enter` to commit the selection.
 
 **Step parameters:**
 
@@ -729,7 +762,7 @@ capturing screenshots and reporting pass/fail per item.
 |-----------|------|----------|-------------|
 | `manifest` | list | yes | List of test items (see above) |
 | `capture_screenshots` | boolean | no | Screenshot after each item (default: true) |
-| `on_failure` | string | no | `continue` (default) \| `abort` |
+| `on_failure` | string | no | `continue` (default) \| `abort`. Set to `abort` while debugging to stop at the first failure. |
 | `return_to_baseline` | boolean | no | Navigate back after each item (default: true) |
 | `baseline_url` | string | no | URL to return to between items |
 
@@ -934,7 +967,7 @@ selector: "text='Submit'"
 selector: "text=/submit/i"          # case-insensitive regex
 
 # By button text inside a container
-selector: "#myDialog button >> text=/Submit/i"
+selector: "#myDialog button:has-text('Submit')"
 
 # By placeholder
 selector: "input[placeholder*='username' i]"
@@ -944,6 +977,51 @@ selector: "input[name='j_username']"
 
 # Multiple fallback selectors (comma-separated — first match wins)
 selector: "input[name='j_username'], input[name='username'], input[type='text']"
+```
+
+### Flex Repeater Instances
+
+Perspective flex repeaters generate component paths with an array index:
+`PopupName$0:2[0].0`, `PopupName$0:2[1].0`, `PopupName$0:2[2].0`, …
+
+Use two `data-component-path` conditions combined to target a specific field across any number of instances, then `>> nth=-1` to select the last (most recently added) one:
+
+```yaml
+# Target a specific field in the LAST flex repeater instance
+# Path suffix .0:1:1 = row container > column 1 > input (leaf element)
+selector: "[data-component-path*='PopupName$0:2['][data-component-path*='.0:1:1'] >> nth=-1"
+
+# Same pattern for column 2 (e.g. numeric field)
+selector: "[data-component-path*='PopupName$0:2['][data-component-path*='.0:2:1'] >> nth=-1"
+
+# Same pattern for column 3 (e.g. dropdown container)
+selector: "[data-component-path*='PopupName$0:2['][data-component-path*='.0:3:1'] >> nth=-1"
+```
+
+The path suffix (`.0:1:1`, `.0:2:1`, etc.) uniquely identifies the field position within a row. Inspect `data-component-path` attributes in your browser DevTools to find the correct suffix for each field.
+
+**Opening a Perspective dropdown in a flex repeater row:**
+Clicking the dropdown container opens the dropdown AND focuses its search input. Follow immediately with `keyboard` + `text` to filter, then `ArrowDown` + `Enter` to select:
+
+```yaml
+- component_id: open_dropdown
+  selector: "[data-component-path*='MyPopup$0:2['][data-component-path*='.0:3:1'] >> nth=-1"
+  action: click
+  expected: Dropdown opens
+
+- component_id: type_search
+  action: keyboard
+  text: "{{ parameter.location }}"
+  expected: Options filtered
+
+- component_id: highlight_option
+  action: keyboard
+  key: ArrowDown
+
+- component_id: confirm_selection
+  action: keyboard
+  key: Enter
+  expected: Option committed to Perspective state
 ```
 
 ---

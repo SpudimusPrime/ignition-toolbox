@@ -110,6 +110,7 @@ export interface NestedStepResult {
   started_at: string | null;
   completed_at: string | null;
   output?: Record<string, unknown>;
+  nested_steps?: NestedStepResult[];
 }
 
 export interface StepResult {

@@ -375,17 +375,26 @@ export function ExecutionTimeline({
 function NestedStepList({
   steps,
   formatDuration,
+  depth = 0,
 }: {
   steps: NestedStepResult[];
   formatDuration: (start?: string | null, end?: string | null) => string;
+  depth?: number;
 }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggle = (id: string) => setExpanded(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
   return (
     <Box
       sx={{
-        ml: 1,
+        ml: depth === 0 ? 1 : 0,
         pl: 1.5,
         borderLeft: '2px solid',
-        borderLeftColor: 'divider',
+        borderLeftColor: depth === 0 ? 'divider' : 'action.disabledBackground',
         display: 'flex',
         flexDirection: 'column',
         gap: 0.25,
@@ -393,60 +402,80 @@ function NestedStepList({
     >
       {steps.map((step, index) => {
         const color = getStatusTimelineColor(step.status);
+        const hasChildren = step.nested_steps && step.nested_steps.length > 0;
+        const isRunning = step.status === 'running';
+        const isOpen = isRunning || expanded.has(step.step_id || String(index));
         return (
-          <Box
-            key={step.step_id || index}
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1,
-              py: 0.5,
-              px: 0.75,
-              borderRadius: 1,
-              '&:hover': { bgcolor: 'action.hover' },
-            }}
-          >
+          <Box key={step.step_id || index}>
             <Box
               sx={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                border: `2px solid ${color}`,
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                bgcolor: 'background.paper',
+                gap: 1,
+                py: 0.5,
+                px: 0.75,
+                borderRadius: 1,
+                cursor: hasChildren ? 'pointer' : 'default',
+                '&:hover': { bgcolor: 'action.hover' },
               }}
+              onClick={() => hasChildren && toggle(step.step_id || String(index))}
             >
-              {getStatusIcon(step.status, { size: 'small' })}
-            </Box>
-            <Typography
-              variant="caption"
-              sx={{
-                flex: 1,
-                fontSize: '0.75rem',
-                color: step.status === 'running' ? 'text.primary' : 'text.secondary',
-                fontWeight: step.status === 'running' ? 500 : 400,
-              }}
-              noWrap
-            >
-              {step.step_name || step.step_id}
-            </Typography>
-            {step.started_at && (
+              <Box
+                sx={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: '50%',
+                  border: `2px solid ${color}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  bgcolor: 'background.paper',
+                }}
+              >
+                {getStatusIcon(step.status, { size: 'small' })}
+              </Box>
               <Typography
                 variant="caption"
-                sx={{ fontSize: '0.65rem', color: 'text.disabled', fontFamily: 'monospace', flexShrink: 0 }}
+                sx={{
+                  flex: 1,
+                  fontSize: depth === 0 ? '0.75rem' : '0.7rem',
+                  color: isRunning ? 'text.primary' : 'text.secondary',
+                  fontWeight: isRunning ? 500 : 400,
+                }}
+                noWrap
               >
-                {formatDuration(step.started_at, step.completed_at)}
+                {step.step_name || step.step_id}
               </Typography>
-            )}
-            {step.error && (
-              <Tooltip title={step.error}>
-                <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'error.main', flexShrink: 0 }}>
-                  ✕
+              {step.started_at && (
+                <Typography
+                  variant="caption"
+                  sx={{ fontSize: '0.65rem', color: 'text.disabled', fontFamily: 'monospace', flexShrink: 0 }}
+                >
+                  {formatDuration(step.started_at, step.completed_at)}
                 </Typography>
-              </Tooltip>
+              )}
+              {step.error && (
+                <Tooltip title={step.error}>
+                  <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'error.main', flexShrink: 0 }}>
+                    ✕
+                  </Typography>
+                </Tooltip>
+              )}
+              {hasChildren && (
+                <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'text.disabled', flexShrink: 0 }}>
+                  {isOpen ? '▾' : '▸'}
+                </Typography>
+              )}
+            </Box>
+            {hasChildren && (
+              <Collapse in={isOpen}>
+                <NestedStepList
+                  steps={step.nested_steps!}
+                  formatDuration={formatDuration}
+                  depth={depth + 1}
+                />
+              </Collapse>
             )}
           </Box>
         );

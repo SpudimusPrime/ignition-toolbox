@@ -177,11 +177,13 @@ export function ParameterInput({
             id={`param-${parameter.name}`}
             value={value || ''}
             onChange={(e) => handleChange(e.target.value)}
-            placeholder={parameter.default || `Enter ${parameter.name}...`}
+            placeholder={String(parameter.default ?? `Enter ${parameter.name}...`)}
             size="small"
             fullWidth
+            type={parameter.type === 'integer' || parameter.type === 'float' ? 'number' : 'text'}
             inputProps={{
               'aria-label': parameter.name,
+              step: parameter.type === 'float' ? 'any' : parameter.type === 'integer' ? '1' : undefined,
             }}
             InputProps={isPathParameter ? {
               endAdornment: (

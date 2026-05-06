@@ -474,14 +474,18 @@ export function Playbooks({ domainFilter }: PlaybooksProps) {
     try {
       const savedConfig = JSON.parse(savedConfigStr);
 
-      // Convert boolean string values to actual booleans
-      const convertedParams: Record<string, string | boolean> = {};
+      // Convert string values to their declared types
+      const convertedParams: Record<string, string | boolean | number> = {};
       for (const [key, value] of Object.entries(savedConfig.parameters || {})) {
-        // Find the parameter definition
         const paramDef = playbook.parameters.find(p => p.name === key);
         if (paramDef?.type === 'boolean') {
-          // Convert string 'true'/'false' to boolean
           convertedParams[key] = value === 'true' || value === true;
+        } else if (paramDef?.type === 'integer') {
+          const parsed = parseInt(value as string, 10);
+          convertedParams[key] = isNaN(parsed) ? value as string : parsed;
+        } else if (paramDef?.type === 'float') {
+          const parsed = parseFloat(value as string);
+          convertedParams[key] = isNaN(parsed) ? value as string : parsed;
         } else {
           convertedParams[key] = value as string;
         }
@@ -490,7 +494,7 @@ export function Playbooks({ domainFilter }: PlaybooksProps) {
       // Execute with saved config parameters + global credential (don't await - navigate when ready)
       api.executions.start({
         playbook_path: playbook.path,
-        parameters: convertedParams as Record<string, string>, // Use converted params (boolean types fixed)
+        parameters: convertedParams as Record<string, string | boolean | number>,
         gateway_url: selectedCredential.gateway_url, // Always use global credential's gateway_url
         credential_name: selectedCredential.name, // Always use global credential
         debug_mode,

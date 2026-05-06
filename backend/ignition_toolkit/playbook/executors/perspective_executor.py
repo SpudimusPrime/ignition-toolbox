@@ -161,15 +161,16 @@ class PerspectiveExtractMetadataHandler(StepHandler):
 class PerspectiveExecuteTestManifestHandler(StepHandler):
     """Handle perspective.execute_test_manifest step - Execute test plan"""
 
-    def __init__(self, manager: BrowserManager, parent_engine: Any = None, parameter_resolver: Any = None):
+    def __init__(self, manager: BrowserManager, parameter_resolver: Any = None):
         self.manager = manager
-        self.parent_engine = parent_engine
         self.parameter_resolver = parameter_resolver
+        # Injected by PlaybookRunHandler before each execute() call; cleared after.
+        self._progress_callback: Any = None
 
     async def _broadcast(self, live_items: list[dict]) -> None:
-        if self.parent_engine:
+        if self._progress_callback:
             try:
-                await self.parent_engine._update_nested_step_progress(live_items)
+                await self._progress_callback(live_items)
             except Exception as e:
                 logger.warning(f"Failed to broadcast test manifest progress: {e}")
 
@@ -266,11 +267,21 @@ class PerspectiveExecuteTestManifestHandler(StepHandler):
                         raise ValueError("No selector provided for fill action")
                     await self.manager.fill(selector, value, timeout=5000, fill_mode=fill_mode)
 
+                elif action == "keyboard":
+                    key = test.get("key")
+                    text = test.get("text")
+                    if text:
+                        await page.keyboard.type(str(text))
+                    elif key:
+                        await page.keyboard.press(key)
+                    else:
+                        raise ValueError("No key or text provided for keyboard action")
+
                 else:
                     raise ValueError(f"Unsupported test action: {action}")
 
                 if capture_screenshots:
-                    screenshot_name = f"test_{component_id}_{datetime.now().timestamp()}"
+                    screenshot_name = test.get("screenshot_name") or f"test_{component_id}_{datetime.now().timestamp()}"
                     screenshot_path = await self.manager.screenshot(screenshot_name)
                     test_result["screenshot"] = str(screenshot_path)
 

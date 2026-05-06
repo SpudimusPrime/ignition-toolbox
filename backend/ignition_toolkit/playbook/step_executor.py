@@ -196,7 +196,7 @@ class StepExecutor:
         if self.browser_manager:
             handlers[StepType.PERSPECTIVE_DISCOVER_PAGE] = PerspectiveDiscoverPageHandler(self.browser_manager)
             handlers[StepType.PERSPECTIVE_EXTRACT_METADATA] = PerspectiveExtractMetadataHandler(self.browser_manager)
-            handlers[StepType.PERSPECTIVE_EXECUTE_TEST_MANIFEST] = PerspectiveExecuteTestManifestHandler(self.browser_manager, parent_engine=self.parent_engine, parameter_resolver=self.parameter_resolver)
+            handlers[StepType.PERSPECTIVE_EXECUTE_TEST_MANIFEST] = PerspectiveExecuteTestManifestHandler(self.browser_manager, parameter_resolver=self.parameter_resolver)
             handlers[StepType.PERSPECTIVE_VERIFY_NAVIGATION] = PerspectiveVerifyNavigationHandler(self.browser_manager)
             handlers[StepType.PERSPECTIVE_VERIFY_DOCK] = PerspectiveVerifyDockHandler(self.browser_manager)
             handlers[StepType.PERSPECTIVE_VERIFY_WITH_AI] = PerspectiveVerifyWithAIHandler(self.browser_manager)

@@ -171,6 +171,18 @@ class PlaybookRunHandler(StepHandler):
             for step in nested_playbook.steps:
                 logger.info(f"Executing nested step: {step.name}")
 
+                # If this handler supports sub-progress (e.g. test manifest), inject a
+                # callback that updates this step's slot in live_nested_steps so manifest
+                # items appear nested inside the step rather than replacing the step list.
+                handler = child_executor._handlers.get(step.type)
+                if handler and hasattr(handler, '_progress_callback'):
+                    def _make_sub_callback(steps_list: list):
+                        async def _sub_cb(sub_items: list) -> None:
+                            steps_list[-1]["nested_steps"] = sub_items
+                            await _broadcast_nested(steps_list)
+                        return _sub_cb
+                    handler._progress_callback = _make_sub_callback(live_nested_steps)
+
                 # Optimistically mark step as running before execution
                 from datetime import datetime as _dt
                 live_nested_steps.append({
@@ -186,6 +198,9 @@ class PlaybookRunHandler(StepHandler):
 
                 step_result = await child_executor.execute_step(step)
 
+                # Preserve any nested_steps accumulated by the sub-callback
+                accumulated_sub_steps = live_nested_steps[-1].get("nested_steps")
+
                 # Replace running entry with actual result
                 live_nested_steps[-1] = {
                     "step_id": step_result.step_id,
@@ -195,8 +210,13 @@ class PlaybookRunHandler(StepHandler):
                     "completed_at": step_result.completed_at.isoformat() if step_result.completed_at else None,
                     "error": step_result.error,
                     "output": step_result.output,
+                    "nested_steps": accumulated_sub_steps,
                 }
                 await _broadcast_nested(live_nested_steps)
+
+                # Clear injected callback
+                if handler and hasattr(handler, '_progress_callback'):
+                    handler._progress_callback = None
 
                 # Store step output for nested playbook step references
                 if step_result.output:
