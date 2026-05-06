@@ -11,6 +11,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
+import MonacoEditor from '@monaco-editor/react';
 import {
   Dialog,
   DialogTitle,
@@ -552,43 +553,45 @@ export function PlaybookEditorDialog({
                   YAML Preview
                 </Typography>
               </Box>
-              <Box
-                sx={{
-                  flex: 1,
-                  overflow: 'auto',
-                  p: 1,
-                  '& pre': {
-                    m: 0,
-                    fontSize: '0.75rem',
-                    fontFamily: 'monospace',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                  },
-                }}
-              >
-                <pre>{configToYaml}</pre>
+              <Box sx={{ flex: 1, overflow: 'hidden' }}>
+                <MonacoEditor
+                  height="100%"
+                  language="yaml"
+                  theme="vs-dark"
+                  value={configToYaml}
+                  options={{
+                    readOnly: true,
+                    fontSize: 11,
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    wordWrap: 'on',
+                    lineNumbers: 'off',
+                    renderLineHighlight: 'none',
+                    folding: false,
+                    automaticLayout: true,
+                  }}
+                />
               </Box>
             </Box>
           </Box>
         ) : viewMode === 'yaml' ? (
-          <Box sx={{ p: 2, height: '100%' }}>
-            <TextField
-              multiline
-              fullWidth
+          <Box sx={{ height: '100%' }}>
+            <MonacoEditor
+              height="100%"
+              language="yaml"
+              theme="vs-dark"
               value={yamlContent}
-              onChange={(e) => handleYamlChange(e.target.value)}
-              sx={{
-                height: '100%',
-                '& .MuiInputBase-root': {
-                  height: '100%',
-                  alignItems: 'flex-start',
-                },
-                '& .MuiInputBase-input': {
-                  fontFamily: 'monospace',
-                  fontSize: '0.85rem',
-                  height: '100% !important',
-                  overflow: 'auto !important',
-                },
+              onChange={(value) => handleYamlChange(value ?? '')}
+              options={{
+                fontSize: 13,
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+                lineNumbers: 'on',
+                renderLineHighlight: 'line',
+                tabSize: 2,
+                insertSpaces: true,
+                automaticLayout: true,
               }}
             />
           </Box>
