@@ -161,8 +161,17 @@ class PerspectiveExtractMetadataHandler(StepHandler):
 class PerspectiveExecuteTestManifestHandler(StepHandler):
     """Handle perspective.execute_test_manifest step - Execute test plan"""
 
-    def __init__(self, manager: BrowserManager):
+    def __init__(self, manager: BrowserManager, parent_engine: Any = None, parameter_resolver: Any = None):
         self.manager = manager
+        self.parent_engine = parent_engine
+        self.parameter_resolver = parameter_resolver
+
+    async def _broadcast(self, live_items: list[dict]) -> None:
+        if self.parent_engine:
+            try:
+                await self.parent_engine._update_nested_step_progress(live_items)
+            except Exception as e:
+                logger.warning(f"Failed to broadcast test manifest progress: {e}")
 
     async def execute(self, params: dict[str, Any]) -> dict[str, Any]:
         manifest = params.get("manifest", [])
@@ -171,8 +180,7 @@ class PerspectiveExecuteTestManifestHandler(StepHandler):
         return_to_baseline = params.get("return_to_baseline", True)
         baseline_url = params.get("baseline_url")
 
-        # Guard: if manifest was stored as a raw string (e.g. from a bad JSON
-        # paste in the form editor) try to parse it, otherwise raise clearly.
+        # Guard: if manifest was stored as a raw string try to parse it.
         if isinstance(manifest, str):
             import json as _json
             try:
@@ -185,13 +193,11 @@ class PerspectiveExecuteTestManifestHandler(StepHandler):
                 )
 
         if not manifest:
-            raise StepExecutionError(
-                "perspective",
-                "No test manifest provided"
-            )
+            raise StepExecutionError("perspective", "No test manifest provided")
 
         page = await self.manager.get_page()
         results = []
+        live_items: list[dict] = []
         passed = 0
         failed = 0
         skipped = 0
@@ -202,25 +208,55 @@ class PerspectiveExecuteTestManifestHandler(StepHandler):
             component_id = test.get("component_id", "unknown")
             action = test.get("action", "click")
             expected = test.get("expected", "No error")
+            started_at = datetime.now().isoformat()
 
             logger.info(f"Testing component: {component_id} (action: {action})")
+
+            # Evaluate skip_if before running
+            skip_if = test.get("skip_if")
+            if skip_if and self.parameter_resolver:
+                if self.parameter_resolver.resolve_skip_if(skip_if):
+                    logger.info(f"Skipping manifest item '{component_id}' — skip_if: {skip_if}")
+                    live_items.append({
+                        "step_id": component_id,
+                        "step_name": f"{action}: {component_id}",
+                        "status": "skipped",
+                        "started_at": started_at,
+                        "completed_at": started_at,
+                        "error": None,
+                        "output": {"skipped": True, "reason": f"skip_if: {skip_if}"},
+                    })
+                    await self._broadcast(live_items)
+                    skipped += 1
+                    results.append({"component_id": component_id, "action": action, "status": "skipped", "started_at": started_at})
+                    continue
+
+            # Broadcast item as running before executing
+            live_items.append({
+                "step_id": component_id,
+                "step_name": f"{action}: {component_id}",
+                "status": "running",
+                "started_at": started_at,
+                "completed_at": None,
+                "error": None,
+                "output": {"expected": expected},
+            })
+            await self._broadcast(live_items)
 
             test_result = {
                 "component_id": component_id,
                 "action": action,
                 "expected": expected,
-                "started_at": datetime.now().isoformat()
+                "started_at": started_at,
             }
 
             try:
-                # Execute test action
                 if action == "click":
                     selector = test.get("selector")
                     if not selector:
                         raise ValueError("No selector provided for click action")
-
                     await page.click(selector, timeout=5000)
-                    await asyncio.sleep(0.5)  # Brief wait for UI response
+                    await asyncio.sleep(0.5)
 
                 elif action == "fill":
                     selector = test.get("selector")
@@ -228,39 +264,34 @@ class PerspectiveExecuteTestManifestHandler(StepHandler):
                     fill_mode = test.get("fill_mode", "type")
                     if not selector:
                         raise ValueError("No selector provided for fill action")
-
                     await self.manager.fill(selector, value, timeout=5000, fill_mode=fill_mode)
 
                 else:
                     raise ValueError(f"Unsupported test action: {action}")
 
-                # Capture screenshot if enabled
                 if capture_screenshots:
                     screenshot_name = f"test_{component_id}_{datetime.now().timestamp()}"
                     screenshot_path = await self.manager.screenshot(screenshot_name)
                     test_result["screenshot"] = str(screenshot_path)
 
-                # Mark as passed
-                test_result["status"] = "passed"
-                test_result["actual"] = "Action completed successfully"
-                test_result["completed_at"] = datetime.now().isoformat()
+                completed_at = datetime.now().isoformat()
+                test_result.update({"status": "passed", "actual": "Action completed successfully", "completed_at": completed_at})
+                live_items[-1].update({"status": "completed", "completed_at": completed_at})
                 passed += 1
 
             except Exception as e:
                 logger.warning(f"Test failed for {component_id}: {e}")
-                test_result["status"] = "failed"
-                test_result["error"] = str(e)
-                test_result["actual"] = f"Error: {e}"
-                test_result["completed_at"] = datetime.now().isoformat()
+                completed_at = datetime.now().isoformat()
+                test_result.update({"status": "failed", "error": str(e), "actual": f"Error: {e}", "completed_at": completed_at})
+                live_items[-1].update({"status": "failed", "error": str(e), "completed_at": completed_at})
                 failed += 1
 
-                if on_failure == "abort":
-                    results.append(test_result)
-                    break
-
+            await self._broadcast(live_items)
             results.append(test_result)
 
-            # Return to baseline if configured
+            if test_result["status"] == "failed" and on_failure == "abort":
+                break
+
             if return_to_baseline and baseline_url:
                 try:
                     await page.goto(baseline_url, wait_until="networkidle", timeout=10000)
@@ -279,7 +310,7 @@ class PerspectiveExecuteTestManifestHandler(StepHandler):
             "passed": passed,
             "failed": failed,
             "skipped": skipped,
-            "results": results
+            "results": results,
         }
 
 
