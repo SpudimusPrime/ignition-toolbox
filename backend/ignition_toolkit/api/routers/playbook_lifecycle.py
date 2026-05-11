@@ -273,9 +273,6 @@ async def export_playbook(playbook_path: str):
     try:
         validated_path = validate_playbook_path(playbook_path)
 
-        loader = PlaybookLoader()
-        playbook = loader.load_from_file(validated_path)
-
         with open(validated_path, encoding='utf-8') as f:
             yaml_content = f.read()
 
@@ -283,13 +280,26 @@ async def export_playbook(playbook_path: str):
         metadata_store = get_metadata_store()
         meta = metadata_store.get_metadata(relative_path)
 
-        domain = playbook.metadata.get('domain', 'gateway')
+        # Try to parse for full metadata — fall back to filename-derived values if invalid
+        try:
+            loader = PlaybookLoader()
+            playbook = loader.load_from_file(validated_path)
+            name = playbook.name
+            version = playbook.version
+            description = playbook.description
+            domain = playbook.metadata.get('domain', 'gateway')
+        except Exception as parse_err:
+            logger.warning(f"Exporting invalid playbook {playbook_path}: {parse_err}")
+            name = validated_path.stem.replace("_", " ").replace("-", " ").title()
+            version = "?"
+            description = ""
+            domain = "unknown"
 
         return PlaybookExportResponse(
-            name=playbook.name,
+            name=name,
             path=relative_path,
-            version=playbook.version,
-            description=playbook.description,
+            version=version,
+            description=description,
             domain=domain,
             yaml_content=yaml_content,
             metadata={

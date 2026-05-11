@@ -401,6 +401,30 @@ async def list_playbooks():
                 )
             except Exception as e:
                 logger.warning(f"Failed to load playbook {yaml_file}: {e}")
+                try:
+                    relative_path = str(yaml_file.relative_to(playbooks_dir)).replace("\\", "/")
+                    if relative_path not in seen_paths:
+                        seen_paths.add(relative_path)
+                        meta = metadata_store.get_metadata(relative_path)
+                        name = yaml_file.stem.replace("_", " ").replace("-", " ").title()
+                        playbooks.append(PlaybookInfo(
+                            name=name,
+                            path=relative_path,
+                            version="?",
+                            description="",
+                            parameter_count=0,
+                            step_count=0,
+                            revision=meta.revision,
+                            enabled=meta.enabled,
+                            verified=False,
+                            last_modified=meta.last_modified,
+                            last_committed_at=meta.last_committed_at,
+                            origin=meta.origin,
+                            created_at=meta.created_at,
+                            load_error=str(e),
+                        ))
+                except Exception:
+                    pass
                 continue
 
     return playbooks

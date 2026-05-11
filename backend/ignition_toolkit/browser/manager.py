@@ -50,6 +50,8 @@ class BrowserManager:
         screenshots_dir: Path | None = None,
         downloads_dir: Path | None = None,
         screenshot_callback: Callable[[str], Awaitable[None]] | None = None,
+        name_counter_width: int = 0,
+        name_counter_sep: str = "",
     ):
         """
         Initialize browser manager
@@ -60,6 +62,8 @@ class BrowserManager:
             screenshots_dir: Directory for saving screenshots
             downloads_dir: Directory for saving downloads
             screenshot_callback: Async function to call with base64 screenshot data
+            name_counter_width: Digits in the per-screenshot counter prefix (0 = disabled)
+            name_counter_sep: Separator between counter and filename (e.g. "_")
         """
         self.headless = headless
         self.slow_mo = slow_mo
@@ -68,6 +72,9 @@ class BrowserManager:
         self.downloads_dir = downloads_dir or (get_data_dir() / "downloads")
         self.downloads_dir.mkdir(parents=True, exist_ok=True)
         self.screenshot_callback = screenshot_callback
+        self._name_counter_width = name_counter_width
+        self._name_counter_sep = name_counter_sep
+        self._screenshot_counter = 0
 
         self._playwright = None
         self._browser: Browser | None = None
@@ -292,6 +299,12 @@ class BrowserManager:
             Path to screenshot file
         """
         page = await self.get_page()
+
+        # Apply sequential counter prefix if configured
+        if self._name_counter_width > 0:
+            self._screenshot_counter += 1
+            from ignition_toolkit.playbook.screenshot_settings import format_counter
+            name = format_counter(self._screenshot_counter, self._name_counter_width, self._name_counter_sep) + name
 
         # Determine format (use override or default from config)
         use_format = format.lower() if format else SCREENSHOT_FORMAT

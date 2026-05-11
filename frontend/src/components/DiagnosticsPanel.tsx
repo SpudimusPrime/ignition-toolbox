@@ -33,6 +33,10 @@ import {
   TableRow,
 } from '@mui/material';
 import {
+  Switch,
+  FormControlLabel,
+} from '@mui/material';
+import {
   Refresh as RefreshIcon,
   Delete as DeleteIcon,
   Download as DownloadIcon,
@@ -45,6 +49,8 @@ import {
   PlayArrow as PlayIcon,
   Pause as PauseIcon,
   Clear as ClearIcon,
+  PhotoCamera as ScreenshotIcon,
+  Save as SaveIcon,
 } from '@mui/icons-material';
 import { api } from '../api/client';
 import { TIMING } from '../config/timing';
@@ -186,6 +192,163 @@ export function DiagnosticsSection() {
         )}
       </Paper>
     </Box>
+  );
+}
+
+const SCREENSHOT_VARS = [
+  { token: '{playbook_name}', desc: 'Sanitized playbook name' },
+  { token: '{date}',          desc: 'YYYY-MM-DD' },
+  { token: '{datetime}',      desc: 'YYYY-MM-DD_HH-MM-SS' },
+  { token: '{year}',          desc: 'Four-digit year' },
+  { token: '{month}',         desc: 'Zero-padded month' },
+  { token: '{day}',           desc: 'Zero-padded day' },
+  { token: '{time}',          desc: 'HH-MM-SS' },
+];
+
+const SCREENSHOT_COUNTER_VARS = [
+  { token: '{#}',   desc: 'Sequential counter, no padding: 1, 2, 10 …' },
+  { token: '{##}',  desc: '2-digit zero-padded counter: 01, 02, 10 …' },
+  { token: '{###}', desc: '3-digit zero-padded counter: 001, 002, 010 …' },
+];
+
+function ScreenshotPathSettings() {
+  const [enabled, setEnabled] = useState(false);
+  const [template, setTemplate] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`${api.getBaseUrl()}/api/config/screenshots`)
+      .then(r => r.json())
+      .then(d => { setEnabled(d.enabled ?? false); setTemplate(d.path_template ?? ''); })
+      .catch(() => setLoadError('Could not load screenshot settings'));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      await fetch(`${api.getBaseUrl()}/api/config/screenshots`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled, path_template: template }),
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch {
+      setLoadError('Failed to save screenshot settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const insertVar = (token: string) => {
+    setTemplate(prev => prev + token);
+  };
+
+  return (
+    <Paper sx={{ p: 3, bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+        <ScreenshotIcon color="primary" />
+        <Typography variant="subtitle2" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 1 }}>
+          Screenshot Output Path
+        </Typography>
+      </Box>
+      <Divider sx={{ mb: 2 }} />
+
+      {loadError && <Alert severity="error" sx={{ mb: 2 }}>{loadError}</Alert>}
+
+      <Stack spacing={2}>
+        <FormControlLabel
+          control={<Switch checked={enabled} onChange={e => setEnabled(e.target.checked)} color="primary" />}
+          label={<Typography variant="body2">Use custom screenshot path</Typography>}
+        />
+
+        {enabled && (
+          <>
+            <TextField
+              label="Path template"
+              value={template}
+              onChange={e => setTemplate(e.target.value)}
+              size="small"
+              fullWidth
+              placeholder="C:\Screenshots\{playbook_name}\{date}"
+              helperText="Absolute path or relative to the default screenshots folder. Use variables below."
+              slotProps={{ input: { style: { fontFamily: 'monospace', fontSize: '0.85rem' } } }}
+            />
+
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+                Path variables — click to insert:
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mb: 1.5 }}>
+                {SCREENSHOT_VARS.map(({ token, desc }) => (
+                  <Tooltip key={token} title={desc}>
+                    <Chip label={token} size="small" variant="outlined" onClick={() => insertVar(token)}
+                      sx={{ fontFamily: 'monospace', cursor: 'pointer' }} />
+                  </Tooltip>
+                ))}
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+                Filename counter — place at end of path, before any separator (e.g. <code>{'{##}_'}</code>):
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                {SCREENSHOT_COUNTER_VARS.map(({ token, desc }) => (
+                  <Tooltip key={token} title={desc}>
+                    <Chip label={token} size="small" color="secondary" variant="outlined"
+                      onClick={() => insertVar(token)} sx={{ fontFamily: 'monospace', cursor: 'pointer' }} />
+                  </Tooltip>
+                ))}
+              </Box>
+            </Box>
+
+            {template && (
+              <Box sx={{ p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  Example — directory and first two filenames:
+                </Typography>
+                {(() => {
+                  const resolved = template
+                    .replace('{playbook_name}', 'my_playbook')
+                    .replace('{date}', '2026-05-11')
+                    .replace('{datetime}', '2026-05-11_14-30-00')
+                    .replace('{year}', '2026').replace('{month}', '05')
+                    .replace('{day}', '11').replace('{time}', '14-30-00');
+                  const counterMatch = resolved.match(/\{(#+)\}([^{]*?)$/);
+                  const dirPart = counterMatch ? resolved.slice(0, resolved.lastIndexOf(counterMatch[0])) : resolved;
+                  const width = counterMatch ? counterMatch[1].length : 0;
+                  const sep = counterMatch ? counterMatch[2] : '';
+                  const fmt = (n: number) => width <= 1 ? String(n) : String(n).padStart(width, '0');
+                  return (
+                    <Box sx={{ fontFamily: 'monospace', fontSize: '0.75rem', wordBreak: 'break-all' }}>
+                      <Box sx={{ color: 'text.secondary' }}>{dirPart}</Box>
+                      {width > 0 && <>
+                        <Box>{fmt(1)}{sep}screenshot.webp</Box>
+                        <Box>{fmt(2)}{sep}screenshot.webp</Box>
+                      </>}
+                    </Box>
+                  );
+                })()}
+              </Box>
+            )}
+          </>
+        )}
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Button
+            variant="contained"
+            size="small"
+            startIcon={saving ? <CircularProgress size={14} /> : <SaveIcon />}
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </Button>
+          {saved && <Typography variant="caption" color="success.main">Saved</Typography>}
+        </Box>
+      </Stack>
+    </Paper>
   );
 }
 
@@ -354,6 +517,9 @@ export function DataManagementSection() {
             )}
           </Paper>
         </Box>
+
+        {/* Screenshot Path */}
+        <ScreenshotPathSettings />
 
         {/* Cleanup Section */}
         <Paper

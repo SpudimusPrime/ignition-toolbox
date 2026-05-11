@@ -10,8 +10,9 @@
  * - Save with backup
  */
 
-import { useState, useEffect, useMemo } from 'react';
-import MonacoEditor from '@monaco-editor/react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import MonacoEditor, { type Monaco } from '@monaco-editor/react';
+import type { editor as MonacoEditorType } from 'monaco-editor';
 import {
   Dialog,
   DialogTitle,
@@ -122,14 +123,94 @@ export function PlaybookEditorDialog({
   onSaved,
 }: PlaybookEditorDialogProps) {
   const queryClient = useQueryClient();
-  const [viewMode, setViewMode] = useState<'form' | 'yaml'>('form');
+  const [viewMode, setViewMode] = useState<'form' | 'yaml'>(playbook?.load_error ? 'yaml' : 'form');
   const [config, setConfig] = useState<PlaybookConfig | null>(null);
   const [yamlContent, setYamlContent] = useState('');
   const [editingStepIndex, setEditingStepIndex] = useState<number | null>(null);
+  const editorRef = useRef<MonacoEditorType.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<Monaco | null>(null);
   const [newStepType, setNewStepType] = useState('');
   const [showAddStep, setShowAddStep] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+
+  // Find the 1-indexed line number of the Nth step list item in raw YAML text
+  const findStepLine = useCallback((text: string, stepIndex: number): number => {
+    const lines = text.split('\n');
+    let inSteps = false;
+    let count = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^steps\s*:/.test(line)) { inSteps = true; continue; }
+      if (inSteps && /^[a-zA-Z]/.test(line)) break; // left steps block
+      if (inSteps && /^\s*-\s/.test(line)) {
+        if (count === stepIndex) return i + 1;
+        count++;
+      }
+    }
+    return 1;
+  }, []);
+
+  // YAML validation — syntax + structural checks, sets Monaco markers
+  const validateYaml = useCallback((content: string) => {
+    const m = monacoRef.current;
+    const ed = editorRef.current;
+    if (!m || !ed) return;
+    const model = ed.getModel();
+    if (!model) return;
+    if (!content.trim()) { m.editor.setModelMarkers(model, 'yaml-lint', []); return; }
+
+    const markers: MonacoEditorType.IMarkerData[] = [];
+
+    const mkMarker = (line: number, col: number, message: string, severity: number): MonacoEditorType.IMarkerData => ({
+      startLineNumber: line,
+      startColumn: col,
+      endLineNumber: line,
+      endColumn: model.getLineLength(line) + 1,
+      message,
+      severity,
+    });
+
+    try {
+      const parsed = yaml.load(content) as Record<string, unknown> | null;
+      if (!parsed || typeof parsed !== 'object') {
+        markers.push(mkMarker(1, 1, 'Playbook must be a YAML object', m.MarkerSeverity.Error));
+      } else {
+        if (!parsed.name) markers.push(mkMarker(1, 1, "Missing required field: 'name'", m.MarkerSeverity.Error));
+        if (!parsed.version) markers.push(mkMarker(1, 1, "Missing required field: 'version'", m.MarkerSeverity.Warning));
+        if (!Array.isArray(parsed.steps) || (parsed.steps as unknown[]).length === 0) {
+          markers.push(mkMarker(1, 1, "Missing or empty required field: 'steps'", m.MarkerSeverity.Error));
+        } else {
+          (parsed.steps as unknown[]).forEach((step, i) => {
+            const s = step as Record<string, unknown>;
+            const stepLine = findStepLine(content, i);
+            if (!s || typeof s !== 'object') {
+              markers.push(mkMarker(stepLine, 1, `Step ${i + 1}: must be a YAML object`, m.MarkerSeverity.Error));
+            } else {
+              if (!s.id) markers.push(mkMarker(stepLine, 1, `Step ${i + 1}: missing required field 'id'`, m.MarkerSeverity.Error));
+              if (!s.type) markers.push(mkMarker(stepLine, 1, `Step ${i + 1}: missing required field 'type'`, m.MarkerSeverity.Error));
+            }
+          });
+        }
+      }
+    } catch (e: unknown) {
+      const yamlErr = e as { mark?: { line?: number; column?: number }; message?: string };
+      const line = (yamlErr.mark?.line ?? 0) + 1;
+      const col = (yamlErr.mark?.column ?? 0) + 1;
+      markers.push(mkMarker(line, col, yamlErr.message ?? 'YAML syntax error', m.MarkerSeverity.Error));
+    }
+    m.editor.setModelMarkers(model, 'yaml-lint', markers);
+  }, [findStepLine]);
+
+  // Reset view mode when playbook changes — errored playbooks always start in YAML mode
+  useEffect(() => {
+    setViewMode(playbook?.load_error ? 'yaml' : 'form');
+  }, [playbook?.path]);
+
+  // Re-validate whenever yamlContent changes (catches content set after editor mounts)
+  useEffect(() => {
+    if (viewMode === 'yaml') validateYaml(yamlContent);
+  }, [yamlContent, viewMode, validateYaml]);
 
   // Fetch step types
   const { data: stepTypesData, isLoading: stepTypesLoading } = useQuery({
@@ -340,7 +421,11 @@ export function PlaybookEditorDialog({
         return; // Don't switch views if YAML is invalid
       }
     } else if (viewMode === 'form' && newView === 'yaml') {
-      setYamlContent(configToYaml);
+      // Only regenerate from form state if the user made changes there.
+      // Preserves comments and blank lines in the original file when just browsing.
+      if (hasChanges) {
+        setYamlContent(configToYaml);
+      }
     }
     setViewMode(newView);
   };
@@ -569,6 +654,7 @@ export function PlaybookEditorDialog({
                     renderLineHighlight: 'none',
                     folding: false,
                     automaticLayout: true,
+                    contextmenu: false,
                   }}
                 />
               </Box>
@@ -582,6 +668,14 @@ export function PlaybookEditorDialog({
               theme="vs-dark"
               value={yamlContent}
               onChange={(value) => handleYamlChange(value ?? '')}
+              onMount={(editor, monaco) => {
+                editorRef.current = editor;
+                monacoRef.current = monaco;
+                editor.onDidChangeModelContent(() => {
+                  validateYaml(editor.getModel()?.getValue() ?? '');
+                });
+                validateYaml(editor.getModel()?.getValue() ?? '');
+              }}
               options={{
                 fontSize: 13,
                 minimap: { enabled: false },
@@ -592,6 +686,7 @@ export function PlaybookEditorDialog({
                 tabSize: 2,
                 insertSpaces: true,
                 automaticLayout: true,
+                contextmenu: false,
               }}
             />
           </Box>

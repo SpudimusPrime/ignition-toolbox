@@ -56,6 +56,7 @@ class PlaybookInfo(BaseModel):
     last_modified: str | None = None
     verified_at: str | None = None
     last_committed_at: str | None = None  # When last pushed to private repo
+    load_error: str | None = None  # Set when the YAML file failed to parse
     # PORTABILITY v4: Origin tracking fields
     origin: str = "unknown"  # built-in, user-created, duplicated, unknown
     duplicated_from: str | None = None  # Source playbook path if duplicated

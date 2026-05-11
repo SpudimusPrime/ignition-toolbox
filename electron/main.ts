@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, session } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, session, Menu } from 'electron';
 import * as path from 'path';
 import { PythonBackend } from './services/python-backend';
 import { registerIpcHandlers } from './ipc/handlers';
@@ -45,6 +45,19 @@ function createWindow(): void {
     // Production: load built frontend
     mainWindow.loadFile(path.join(__dirname, '../frontend/dist/index.html'));
   }
+
+  // Native context menu for editable content (replaces Monaco's DOM menu which
+  // dismisses immediately under Electron's sandbox mode)
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const menu = Menu.buildFromTemplate([
+      { label: 'Cut',       role: 'cut',       enabled: params.isEditable && params.selectionText.length > 0 },
+      { label: 'Copy',      role: 'copy',      enabled: params.selectionText.length > 0 },
+      { label: 'Paste',     role: 'paste',     enabled: params.isEditable },
+      { type: 'separator' },
+      { label: 'Select All', role: 'selectAll', enabled: params.isEditable || params.selectionText.length > 0 },
+    ]);
+    menu.popup({ window: mainWindow! });
+  });
 
   // Handle external links
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

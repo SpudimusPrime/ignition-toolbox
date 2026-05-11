@@ -90,6 +90,33 @@ def _save_ui_state(state: dict[str, Any]) -> None:
     path.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
+# ── Screenshot Path Settings ──────────────────────────────────────────────────
+
+class ScreenshotSettingsPayload(BaseModel):
+    enabled: bool
+    path_template: str
+
+
+@router.get("/screenshots")
+async def get_screenshot_settings_endpoint():
+    """Return current screenshot path settings."""
+    from ignition_toolkit.playbook.screenshot_settings import get_screenshot_settings
+    return get_screenshot_settings()
+
+
+@router.post("/screenshots")
+async def save_screenshot_settings_endpoint(payload: ScreenshotSettingsPayload):
+    """Persist screenshot path settings."""
+    try:
+        from ignition_toolkit.playbook.screenshot_settings import save_screenshot_settings
+        save_screenshot_settings(payload.enabled, payload.path_template)
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── UI State Persistence ───────────────────────────────────────────────────────
+
 class SectionsPayload(BaseModel):
     sections: list[dict[str, Any]]
 

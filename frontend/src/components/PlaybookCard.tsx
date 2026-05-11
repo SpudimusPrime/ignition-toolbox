@@ -139,6 +139,7 @@ export function PlaybookCard({ playbook, onConfigure, onExecute, onExport, onVie
   });
 
   const isDisabled = !playbook.enabled;
+  const hasLoadError = !!playbook.load_error;
 
   // Check if required parameters are configured
   const areParamsConfigured = (): boolean => {
@@ -348,7 +349,7 @@ export function PlaybookCard({ playbook, onConfigure, onExecute, onExport, onVie
         position: 'relative',
         opacity: isDisabled ? 0.7 : 1,
         border: '2px solid',
-        borderColor: isDisabled ? 'warning.main' : 'divider',
+        borderColor: hasLoadError ? 'error.main' : isDisabled ? 'warning.main' : 'divider',
         borderRadius: 2,
         backgroundColor: 'background.paper',
         transition: 'all 0.3s ease-in-out',
@@ -433,23 +434,34 @@ export function PlaybookCard({ playbook, onConfigure, onExecute, onExport, onVie
           )}
         </Box>
 
+        {/* Load error banner */}
+        {hasLoadError && (
+          <Box sx={{ mb: 1, p: 1, bgcolor: 'error.dark', borderRadius: 1 }}>
+            <Typography variant="caption" sx={{ color: 'error.contrastText', fontFamily: 'monospace', display: 'block', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {playbook.load_error}
+            </Typography>
+          </Box>
+        )}
+
         {/* Description - 2 lines max */}
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          sx={{
-            mb: 1,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            lineHeight: 1.4,
-            minHeight: '2.8em',
-          }}
-        >
-          {playbook.description}
-        </Typography>
+        {!hasLoadError && (
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{
+              mb: 1,
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              lineHeight: 1.4,
+              minHeight: '2.8em',
+            }}
+          >
+            {playbook.description}
+          </Typography>
+        )}
       </CardContent>
 
       {/* Action Buttons */}
@@ -490,6 +502,7 @@ export function PlaybookCard({ playbook, onConfigure, onExecute, onExport, onVie
         )}
 
         <Tooltip title={
+          hasLoadError ? 'Fix the YAML syntax error before executing' :
           isDisabled ? 'Enable this playbook first' :
           !selectedCredential ? 'Select a global credential first (in header dropdown)' :
           paramsConfigured ? `Execute with credential: ${selectedCredential.name}` :
@@ -502,7 +515,7 @@ export function PlaybookCard({ playbook, onConfigure, onExecute, onExport, onVie
               startIcon={<PlayIcon />}
               onClick={handleExecuteClick}
               fullWidth
-              disabled={isDisabled || !paramsConfigured}
+              disabled={hasLoadError || isDisabled || !paramsConfigured}
               aria-label={`Execute ${playbook.name} playbook`}
             >
               Execute

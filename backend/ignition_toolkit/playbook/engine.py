@@ -388,10 +388,17 @@ class PlaybookEngine:
                 else:
                     logger.debug("Creating browser manager without screenshot streaming")
 
+                from ignition_toolkit.playbook.screenshot_settings import resolve_screenshot_config
+                screenshots_dir, counter_width, counter_sep = resolve_screenshot_config(playbook.name)
+                logger.info(f"Screenshots directory: {screenshots_dir} (counter_width={counter_width})")
+
                 browser_manager = BrowserManager(
                     headless=True,
                     screenshot_callback=screenshot_frame_callback,
                     downloads_dir=downloads_dir,
+                    screenshots_dir=screenshots_dir,
+                    name_counter_width=counter_width,
+                    name_counter_sep=counter_sep,
                 )
                 await browser_manager.start()
 
