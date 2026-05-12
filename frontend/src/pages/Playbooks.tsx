@@ -305,7 +305,7 @@ export function Playbooks({ domainFilter }: PlaybooksProps) {
   const sectionsDomain = domainFilter || 'gateway';
   const {
     sections,
-    loading: sectionsLoading,
+    loading: _sectionsLoading,
     createSection,
     deleteSection,
     renameSection,
