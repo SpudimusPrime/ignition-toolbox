@@ -538,6 +538,20 @@ class PlaybookEngine:
                         step_results_dict[step.id] = step_result.output
                         logger.debug(f"Step {step.id} output stored: {list(step_result.output.keys())}")
 
+                    # Handle abort requested by a report assertion (skip-to: abort)
+                    if step_result.output and step_result.output.get("abort_requested"):
+                        execution_state.status = ExecutionStatus.FAILED
+                        execution_state.error = step_result.output.get(
+                            "abort_message",
+                            f"Playbook aborted by report assertion in step '{step.id}'",
+                        )
+                        execution_state.completed_at = datetime.now()
+                        await self._notify_update(execution_state)
+                        if self.database:
+                            await self._save_step_result(execution_state, step_result)
+                            await self._save_execution_end(execution_state)
+                        return execution_state
+
                     # Handle set_variable step
                     if step.type.value == "utility.set_variable" and step_result.output:
                         var_name = step_result.output.get("variable")
@@ -860,23 +874,37 @@ class PlaybookEngine:
     async def _save_step_result(
         self, execution_state: ExecutionState, step_result: StepResult
     ) -> None:
-        """Save step result to database"""
+        """Save step result to database, updating the pre-populated pending row if it exists."""
         try:
             if not hasattr(execution_state, "db_execution_id"):
                 logger.warning("No database execution ID found, skipping step result save")
                 return
             with self.database.session_scope() as session:
-                step_model = StepResultModel(
-                    execution_id=execution_state.db_execution_id,
-                    step_id=step_result.step_id,
-                    step_name=step_result.step_name,
-                    status=step_result.status.value,
-                    started_at=step_result.started_at,
-                    completed_at=step_result.completed_at,
-                    output=step_result.output,
-                    error_message=step_result.error,
+                existing = (
+                    session.query(StepResultModel)
+                    .filter_by(
+                        execution_id=execution_state.db_execution_id,
+                        step_id=step_result.step_id,
+                    )
+                    .first()
                 )
-                session.add(step_model)
+                if existing:
+                    existing.status = step_result.status.value
+                    existing.started_at = step_result.started_at
+                    existing.completed_at = step_result.completed_at
+                    existing.output = step_result.output
+                    existing.error_message = step_result.error
+                else:
+                    session.add(StepResultModel(
+                        execution_id=execution_state.db_execution_id,
+                        step_id=step_result.step_id,
+                        step_name=step_result.step_name,
+                        status=step_result.status.value,
+                        started_at=step_result.started_at,
+                        completed_at=step_result.completed_at,
+                        output=step_result.output,
+                        error_message=step_result.error,
+                    ))
         except Exception as e:
             logger.exception(f"Error saving step result to database: {e}")
 

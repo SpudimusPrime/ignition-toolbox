@@ -159,6 +159,7 @@ class PlaybookRunHandler(StepHandler):
             # Execute all steps in the nested playbook
             nested_results = []
             nested_screenshots = []  # Track screenshots from nested execution
+            nested_report_entries: list[dict] = []  # Aggregated report entries from nested steps
             live_nested_steps: list[dict] = []  # Live view broadcast to frontend
 
             async def _broadcast_nested(steps: list[dict]) -> None:
@@ -222,7 +223,7 @@ class PlaybookRunHandler(StepHandler):
                 if step_result.output:
                     nested_step_results[step.id] = step_result.output
 
-                # Extract screenshot paths from step result output
+                # Extract screenshot paths and report entries from step result output
                 if step_result.output and isinstance(step_result.output, dict):
                     screenshot = step_result.output.get("screenshot")
                     if screenshot and isinstance(screenshot, str):
@@ -231,6 +232,10 @@ class PlaybookRunHandler(StepHandler):
                     nested_playbook_screenshots = step_result.output.get("screenshots", [])
                     if isinstance(nested_playbook_screenshots, list):
                         nested_screenshots.extend(nested_playbook_screenshots)
+
+                    step_report_entries = step_result.output.get("report_entries", [])
+                    if isinstance(step_report_entries, list):
+                        nested_report_entries.extend(step_report_entries)
 
                 nested_results.append({
                     "step_id": step.id,
@@ -256,15 +261,16 @@ class PlaybookRunHandler(StepHandler):
 
             logger.info(f"Nested playbook '{playbook_path}' created {len(nested_screenshots)} screenshots")
 
-            return {
+            output = {
                 "playbook": playbook_path,
                 "status": "completed",
                 "steps_executed": len(nested_results),
-                # Return summary of nested steps (nested steps are tracked separately in execution log)
                 "steps": nested_results,
-                # Track all screenshots created during nested execution (for cleanup on deletion)
                 "screenshots": nested_screenshots,
             }
+            if nested_report_entries:
+                output["report_entries"] = nested_report_entries
+            return output
 
         finally:
             # Remove from execution stack

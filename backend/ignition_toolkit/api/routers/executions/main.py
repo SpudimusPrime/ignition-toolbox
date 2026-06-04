@@ -4,11 +4,14 @@ Execution management routes
 Handles playbook execution control, status tracking, and lifecycle management.
 """
 
+import csv
+import io
 import logging
 from datetime import datetime
 
 import yaml
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 
 from ignition_toolkit.api.routers.executions.helpers import (
     DEFAULT_EXECUTION_LIST_LIMIT,
@@ -389,6 +392,71 @@ async def update_playbook_code(
         "playbook_path": str(playbook_path),
         "backup_path": str(backup_path.name),
     }
+
+
+@router.get("/{execution_id}/report.csv")
+async def get_execution_report_csv(execution_id: str):
+    """Download report entries from an execution as CSV"""
+    active_engines = get_active_engines()
+    step_data: list[tuple[str, list[dict]]] = []  # (step_name, report_entries)
+    playbook_name = "unknown"
+
+    # Try active engine first
+    if execution_id in active_engines:
+        engine = active_engines[execution_id]
+        state = engine.get_current_execution()
+        if state:
+            playbook_name = state.playbook_name
+            for sr in state.step_results:
+                if sr.output and sr.output.get("report_entries"):
+                    step_data.append((sr.step_name, sr.output["report_entries"]))
+
+    # Fall back to database
+    if not step_data:
+        db = get_database()
+        try:
+            with db.session_scope() as session:
+                from ignition_toolkit.storage.models import ExecutionModel
+
+                execution = (
+                    session.query(ExecutionModel)
+                    .filter(ExecutionModel.execution_id == execution_id)
+                    .first()
+                )
+                if not execution:
+                    raise HTTPException(status_code=404, detail=f"Execution {execution_id} not found")
+
+                playbook_name = execution.playbook_name
+                for step in execution.step_results:
+                    if step.output and step.output.get("report_entries"):
+                        step_data.append((step.step_name, step.output["report_entries"]))
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception(f"Error loading execution report from database: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(
+        buf,
+        fieldnames=[
+            "execution_id", "playbook", "step_name", "component_id", "label",
+            "declared_result", "actual_result", "matched", "skip_to_fired", "timestamp",
+        ],
+        extrasaction="ignore",
+    )
+    writer.writeheader()
+    for step_name, entries in step_data:
+        for entry in entries:
+            writer.writerow({"execution_id": execution_id, "playbook": playbook_name, "step_name": step_name, **entry})
+
+    buf.seek(0)
+    filename = f"report_{execution_id[:8]}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @router.delete("/{execution_id}")

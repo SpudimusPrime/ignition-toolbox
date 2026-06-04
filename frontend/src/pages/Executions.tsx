@@ -48,6 +48,7 @@ import {
   Delete as DeleteIcon,
   Refresh as RefreshIcon,
   Download as DownloadIcon,
+  TableChart as CsvIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
@@ -294,6 +295,21 @@ export function Executions() {
     queryClient.invalidateQueries({ queryKey: ['executions'] });
     setSnackbarMessage('Executions list refreshed');
     setSnackbarOpen(true);
+  };
+
+  // Helper function to download report entries as CSV
+  const handleDownloadCsv = async (execution: ExecutionStatusResponse) => {
+    const response = await fetch(`/api/executions/${execution.execution_id}/report.csv`);
+    if (!response.ok) return;
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `report_${execution.execution_id.slice(0, 8)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Helper function to download execution results as JSON
@@ -560,6 +576,16 @@ export function Executions() {
                             Step Details
                           </Typography>
                           <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                            <Tooltip title="Download report entries as CSV">
+                              <IconButton
+                                size="small"
+                                color="primary"
+                                onClick={() => handleDownloadCsv(execution)}
+                                aria-label="Download report as CSV"
+                              >
+                                <CsvIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
                             <Tooltip title="Download full execution results as JSON">
                               <IconButton
                                 size="small"

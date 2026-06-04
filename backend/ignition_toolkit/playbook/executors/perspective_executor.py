@@ -198,14 +198,20 @@ class PerspectiveExecuteTestManifestHandler(StepHandler):
 
         page = await self.manager.get_page()
         results = []
+        report_entries: list[dict] = []
         live_items: list[dict] = []
         passed = 0
         failed = 0
         skipped = 0
+        abort_requested = False
 
         logger.info(f"Executing test manifest with {len(manifest)} tests")
 
-        for test in manifest:
+        index = 0
+        while index < len(manifest):
+            test = manifest[index]
+            jump_index: int | None = None
+
             component_id = test.get("component_id", "unknown")
             action = test.get("action", "click")
             expected = test.get("expected", "No error")
@@ -230,6 +236,7 @@ class PerspectiveExecuteTestManifestHandler(StepHandler):
                     await self._broadcast(live_items)
                     skipped += 1
                     results.append({"component_id": component_id, "action": action, "status": "skipped", "started_at": started_at})
+                    index += 1
                     continue
 
             # Broadcast item as running before executing
@@ -300,6 +307,53 @@ class PerspectiveExecuteTestManifestHandler(StepHandler):
             await self._broadcast(live_items)
             results.append(test_result)
 
+            # Evaluate report block (independent of action pass/fail)
+            report_block = test.get("report")
+            if report_block:
+                report_selector = report_block.get("selector")
+                declared_result = report_block.get("result", "pass")
+                # Support both "skip-to" (YAML) and "skip_to" (dict) key forms
+                skip_to = report_block.get("skip-to") or report_block.get("skip_to")
+
+                try:
+                    element = await page.query_selector(report_selector)
+                    selector_found = element is not None
+                except Exception as e:
+                    logger.warning(f"Report selector evaluation failed for '{component_id}': {e}")
+                    selector_found = False
+
+                # "pass": selector found = good; "fail": selector absent = good (negative/deletion test)
+                matched = selector_found if declared_result == "pass" else not selector_found
+                actual_result = "pass" if matched else "fail"
+                skip_to_fired = not matched and bool(skip_to)
+
+                report_entries.append({
+                    "component_id": component_id,
+                    "label": expected,
+                    "selector": report_selector,
+                    "declared_result": declared_result,
+                    "actual_result": actual_result,
+                    "matched": matched,
+                    "skip_to_fired": skip_to_fired,
+                    "timestamp": datetime.now().isoformat(),
+                })
+
+                if skip_to_fired:
+                    if skip_to == "abort":
+                        abort_requested = True
+                        break
+                    elif skip_to == "end":
+                        break
+                    else:
+                        target_index = next(
+                            (j for j, item in enumerate(manifest) if item.get("component_id") == skip_to),
+                            None,
+                        )
+                        if target_index is not None:
+                            jump_index = target_index
+                        else:
+                            logger.warning(f"Report skip-to target '{skip_to}' not found in manifest")
+
             if test_result["status"] == "failed" and on_failure == "abort":
                 break
 
@@ -310,12 +364,14 @@ class PerspectiveExecuteTestManifestHandler(StepHandler):
                 except Exception as e:
                     logger.warning(f"Failed to return to baseline: {e}")
 
+            index = jump_index if jump_index is not None else index + 1
+
         logger.info(
             f"Test execution complete: {passed} passed, {failed} failed, "
             f"{skipped} skipped (total: {len(results)})"
         )
 
-        return {
+        output: dict[str, Any] = {
             "status": "completed",
             "total": len(results),
             "passed": passed,
@@ -323,6 +379,15 @@ class PerspectiveExecuteTestManifestHandler(StepHandler):
             "skipped": skipped,
             "results": results,
         }
+        if report_entries:
+            output["report_entries"] = report_entries
+        if abort_requested:
+            output["abort_requested"] = True
+            last_component = report_entries[-1]["component_id"] if report_entries else "unknown"
+            output["abort_message"] = (
+                f"Playbook aborted by report assertion at component '{last_component}'"
+            )
+        return output
 
 
 class PerspectiveVerifyNavigationHandler(StepHandler):

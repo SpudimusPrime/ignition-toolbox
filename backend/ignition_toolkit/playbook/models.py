@@ -263,6 +263,29 @@ class Playbook:
 
 
 @dataclass
+class ReportBlock:
+    """Report assertion declaration within a manifest item"""
+
+    selector: str
+    result: str  # "pass" | "fail" — what a selector match means
+    skip_to: str | None = None  # component_id | "end" | "abort"
+
+
+@dataclass
+class ReportEntry:
+    """Runtime result of a single report assertion"""
+
+    component_id: str
+    label: str           # from the manifest item's 'expected' field
+    selector: str
+    declared_result: str  # "pass" | "fail"
+    actual_result: str    # "pass" | "fail"
+    matched: bool
+    skip_to_fired: bool
+    timestamp: str        # ISO-8601
+
+
+@dataclass
 class StepResult:
     """
     Result of step execution

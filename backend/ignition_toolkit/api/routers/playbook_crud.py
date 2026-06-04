@@ -308,24 +308,17 @@ async def list_playbooks():
                 relative_path = str(yaml_file.relative_to(playbooks_dir)).replace("\\", "/")
 
                 # Auto-sync: if user-dir copy exists for a built-in playbook
-                # and user never edited it (revision 0), update from built-in
-                if source == "user-installed" and builtin_dir:
+                # and user never edited it (revision 0), update from built-in.
+                # Only runs when the built-in dir actually exists on disk.
+                if source == "user-installed" and builtin_dir.exists():
                     builtin_file = builtin_dir / relative_path
                     if builtin_file.exists():
                         meta = metadata_store.get_metadata(relative_path)
-                        if meta.revision == 0 and meta.origin in ("built-in", "unknown"):
+                        if meta.revision == 0 and meta.origin == "built-in":
                             if builtin_file.read_bytes() != yaml_file.read_bytes():
                                 shutil.copy2(builtin_file, yaml_file)
                                 logger.info(f"Auto-synced playbook from built-in: {relative_path}")
                                 playbook = loader.load_from_file(yaml_file)
-                    else:
-                        # Cleanup: built-in was removed — delete unedited user-dir copy
-                        meta = metadata_store.get_metadata(relative_path)
-                        if meta.revision == 0 and meta.origin in ("built-in", "unknown"):
-                            yaml_file.unlink()
-                            metadata_store.delete_metadata(relative_path)
-                            logger.info(f"Removed obsolete user-dir playbook (built-in deleted): {relative_path}")
-                            continue
 
                 if relative_path in seen_paths:
                     logger.debug(f"Skipping {relative_path} from {source} (already loaded)")

@@ -162,14 +162,17 @@ export function PlaybookEditorDialog({
 
     const markers: MonacoEditorType.IMarkerData[] = [];
 
-    const mkMarker = (line: number, col: number, message: string, severity: number): MonacoEditorType.IMarkerData => ({
-      startLineNumber: line,
-      startColumn: col,
-      endLineNumber: line,
-      endColumn: model.getLineLength(line) + 1,
-      message,
-      severity,
-    });
+    const mkMarker = (line: number, col: number, message: string, severity: number): MonacoEditorType.IMarkerData => {
+      const safeLine = Math.max(1, Math.min(line, model.getLineCount()));
+      return {
+        startLineNumber: safeLine,
+        startColumn: Math.max(1, col),
+        endLineNumber: safeLine,
+        endColumn: model.getLineLength(safeLine) + 1,
+        message,
+        severity,
+      };
+    };
 
     try {
       const parsed = yaml.load(content) as Record<string, unknown> | null;
